@@ -15,8 +15,19 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends shellcheck desktop-file-utils appstream libxml2-utils python3-yaml
-        curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${{ inputs.actionlint-version }}/actionlint_${{ inputs.actionlint-version }}_linux_amd64.tar.gz" \
-          | tar -xz -C "$RUNNER_TEMP" actionlint
+        tar_url="https://github.com/rhysd/actionlint/releases/download/v${{ inputs.actionlint-version }}/actionlint_${{ inputs.actionlint-version }}_linux_amd64.tar.gz"
+        curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" "$tar_url"
+        case "${{ inputs.actionlint-version }}" in
+          "1.7.12")
+            expected="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+            ;;
+          *)
+            curl -fsSL -o "$RUNNER_TEMP/checksums.txt" "https://github.com/rhysd/actionlint/releases/download/v${{ inputs.actionlint-version }}/actionlint_${{ inputs.actionlint-version }}_checksums.txt"
+            expected=$(grep -E "actionlint_${{ inputs.actionlint-version }}_linux_amd64\.tar\.gz" "$RUNNER_TEMP/checksums.txt" | awk '{print $1}')
+            ;;
+        esac
+        echo "$expected  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+        tar -xz -C "$RUNNER_TEMP" -f "$RUNNER_TEMP/actionlint.tar.gz" actionlint
 
     - name: actionlint
       shell: bash

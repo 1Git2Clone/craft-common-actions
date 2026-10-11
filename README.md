@@ -14,7 +14,7 @@ Full multi-platform release pipeline for Craft apps:
 - **Flatpak** (x86_64, aarch64 bundle generation)
 - **FreeBSD** (FreeBSD 14.3 VM build & packaging)
 - **WebAssembly** (wasm32-unknown-unknown with Trunk)
-- **Linux RISC-V 64** (cross-compilation for riscv64gc-unknown-linux-gnu)
+- **Linux RISC-V 64** (cross-compilation for riscv64gc-unknown-linux-gnu, producing deb, rpm, and tar.gz via SHA256-verified nfpm)
 - **Draft Release** (computes `SHA256SUMS.txt` and publishes/updates draft GitHub Release)
 
 #### Caller Example:
@@ -160,6 +160,7 @@ Individual actions are also available for composing custom pipelines:
 - `actions/checkout-craft-fonts`: Checks out `storytold/craft-fonts` at a designated ref.
 - `actions/resolve-version`: Slices version from `packaging/env.sh` and validates format.
 - `actions/install-wix`: Installs WiX toolset and UI/Util extensions.
+- `actions/install-nfpm`: Installs `nfpm` with strict SHA256 checksum verification.
 - `actions/install-linux-deps`: Installs Linux system build libraries and nfpm.
 - `actions/install-riscv64-cross`: Installs Ubuntu ports RISC-V multiarch and cross-compilers.
 - `actions/install-trunk`: Installs Trunk for WebAssembly builds.

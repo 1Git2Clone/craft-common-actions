@@ -727,7 +727,12 @@ jobs:
         if: inputs.version != ''
         run: cargo xtask version set "$VERSION"
       - uses: dylanmtaylor/artcraft-common-actions/actions/install-riscv64-cross@main
-      - name: Build and package (tar.gz)
+      - name: Install nfpm (SHA256-verified)
+        uses: dylanmtaylor/artcraft-common-actions/actions/install-nfpm@main
+        with:
+          nfpm-version: ${{ inputs.nfpm-version }}
+          deb-arch: amd64
+      - name: Build and package (deb, rpm, tar.gz)
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
           CRAFT_FONTS_REQUIRED: "1"
@@ -740,11 +745,15 @@ jobs:
           CROSS_COMPILE: riscv64-linux-gnu-
           EMULATOR: qemu-riscv64
           QEMU_LD_PREFIX: /usr/riscv64-linux-gnu
-        run: packaging/linux/package.sh --formats tar
+        run: packaging/linux/package.sh --formats deb,rpm,tar
+      - name: Check the packages
+        run: |
+          dpkg-deb --info dist/release/*-linux-riscv64.deb 2>/dev/null || true
+          dpkg-deb --contents dist/release/*-linux-riscv64.deb 2>/dev/null | grep -E 'usr/bin/|metainfo|applications' || true
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-riscv64
-          path: dist/release/*.tar.gz
+          path: dist/release/*
           if-no-files-found: error
 
   release:
