@@ -160,6 +160,28 @@ jobs:
       WORDCRAFT_BUILD_SHA: ${{ github.sha }}
       INPUT_VERSION: ${{ inputs.version }}
     steps:
+      # A signed job reads only the secrets the caller lists in its `secrets:` block; values come
+      # from the repo's `release` environment. An unlisted name is empty, and the app's packaging
+      # would then warn and ship unsigned, so on the release branch fail here instead.
+      - name: Require signing secrets on the release branch
+        if: github.ref == 'refs/heads/release'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::macOS release builds must be signed and notarized, but these secrets are empty:$missing. List them in the caller's secrets: block and set them in the repo's release environment."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
@@ -267,6 +289,30 @@ jobs:
       WORDCRAFT_BUILD_SHA: ${{ github.sha }}
       INPUT_VERSION: ${{ inputs.version }}
     steps:
+      # See the macOS job: unlisted secrets are empty, and the build would ship unsigned.
+      # Signing needs either the PFX pair or all six Azure Trusted Signing values.
+      - name: Require signing secrets on the release branch
+        if: github.ref == 'refs/heads/release'
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
+        run: |
+          if [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; then exit 0; fi
+          missing=""
+          for name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_CERT_PROFILE; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Windows release builds must be signed, but there is no WINDOWS_CERTIFICATE pair and these Azure Trusted Signing secrets are empty:$missing. List them in the caller's secrets: block and set them in the repo's release environment."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
@@ -751,7 +797,7 @@ jobs:
           CROSS_COMPILE: riscv64-linux-gnu-
           EMULATOR: qemu-riscv64
           QEMU_LD_PREFIX: /usr/riscv64-linux-gnu
-        run: packaging/linux/package.sh --formats deb,rpm,tar
+        run: packaging/linux/package.sh --formats "deb rpm tar"
       - name: Check the packages
         run: |
           dpkg-deb --info dist/release/*-linux-riscv64.deb 2>/dev/null || true
