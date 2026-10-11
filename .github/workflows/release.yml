@@ -55,7 +55,7 @@ on:
         description: "FreeBSD OS version to run in VM"
         type: string
         required: false
-        default: "14.3"
+        default: "15.1-STABLE"
 
     secrets:
       APPLE_CERTIFICATE:
@@ -546,7 +546,7 @@ jobs:
       - name: Build and package in a FreeBSD VM
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
-          release: ${{ inputs.freebsd-release }}
+          release: ${{ inputs.freebsd-release == '15.1-STABLE' && '15.1' || inputs.freebsd-release }}
           usesh: true
           cpu: 4
           mem: 12288
