@@ -83,6 +83,9 @@ runs:
           if grep -oE '<Icon Id="[^"]*"' $wxs | grep -vE '\.(ico|exe)"$'; then
             echo "::error::Icon Id must end in .ico or .exe"; exit 1
           fi
+          if [ "$(grep -oiE '(UpgradeCode|Guid)="[0-9A-F-]{36}"' $wxs | cut -d'"' -f2 | sort -f | uniq -di)" ]; then
+            echo "::error file=$wxs::duplicate GUID"; exit 1
+          fi
         fi
 
         for df in $(ls packaging/linux/*.desktop 2>/dev/null || true); do
