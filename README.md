@@ -12,7 +12,7 @@ Full multi-platform release pipeline for Craft apps:
 - **Windows** (x64, x86, ARM64 MSI installer with WiX v5, CLI, Azure Trusted Signing)
 - **Linux** (x86_64, aarch64 AppImage, deb, rpm, tar.gz via nfpm)
 - **Flatpak** (x86_64, aarch64 bundle generation)
-- **FreeBSD** (FreeBSD 14.3 VM build & packaging)
+- **FreeBSD** (FreeBSD 15.1-STABLE VM build & packaging)
 - **WebAssembly** (wasm32-unknown-unknown with Trunk)
 - **Linux RISC-V 64** (cross-compilation for riscv64gc-unknown-linux-gnu, producing deb, rpm, and tar.gz via SHA256-verified nfpm)
 - **Draft Release** (computes `SHA256SUMS.txt` and publishes/updates draft GitHub Release)
@@ -122,7 +122,7 @@ jobs:
 ```
 
 ### 4. `freebsd.yml`
-Builds and runs workspace tests inside a FreeBSD 14 VM on a Linux runner.
+Builds and runs workspace tests inside a FreeBSD 15 VM on a Linux runner.
 
 #### Caller Example:
 ```yaml

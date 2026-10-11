@@ -12,7 +12,7 @@ on:
         description: "FreeBSD OS release version to run in the VM"
         type: string
         required: false
-        default: "14.3"
+        default: "15.1-STABLE"
       cargo-test-extra-args:
         description: "Extra arguments to append to cargo test (optional)"
         type: string
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   freebsd:
-    name: FreeBSD 14 (build + test)
+    name: FreeBSD 15 (build + test)
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -37,7 +37,7 @@ jobs:
       - name: Build and test in a FreeBSD VM
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
-          release: ${{ inputs.freebsd-release }}
+          release: ${{ inputs.freebsd-release == '15.1-STABLE' && '15.1' || inputs.freebsd-release }}
           usesh: true
           cpu: 4
           mem: 12288
