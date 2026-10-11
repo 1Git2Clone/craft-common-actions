@@ -1,0 +1,18 @@
+name: "Install Trunk"
+description: "Downloads and installs Trunk for WebAssembly packaging"
+
+inputs:
+  trunk-version:
+    description: "Version of Trunk to install"
+    required: false
+    default: "0.21.14"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install trunk
+      shell: bash
+      run: |
+        curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${{ inputs.trunk-version }}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+          | tar -xz -C "$HOME/.cargo/bin" trunk
+        trunk --version

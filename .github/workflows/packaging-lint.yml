@@ -1,0 +1,20 @@
+name: "Packaging lint"
+
+on:
+  workflow_call:
+    inputs:
+      actionlint-version:
+        description: "Version of actionlint to install"
+        type: string
+        required: false
+        default: "1.7.12"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run packaging lint
+        uses: dylanmtaylor/artcraft-common-actions/actions/packaging-lint@main
+        with:
+          actionlint-version: ${{ inputs.actionlint-version }}

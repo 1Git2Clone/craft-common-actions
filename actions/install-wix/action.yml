@@ -1,0 +1,24 @@
+name: "Install WiX Toolset"
+description: "Installs WiX dotnet tool and standard extensions for building MSI packages on Windows"
+
+inputs:
+  wix-version:
+    description: "Version of WiX to install"
+    required: false
+    default: "5.0.2"
+  install-extensions:
+    description: "Install standard UI and Util extensions"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        $version = "${{ inputs.wix-version }}"
+        dotnet tool install --global wix --version $version
+        if ("${{ inputs.install-extensions }}" -eq "true") {
+          wix extension add -g "WixToolset.UI.wixext/$version" "WixToolset.Util.wixext/$version"
+        }
