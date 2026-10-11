@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
   release:
-    uses: dylanmtaylor/artcraft-common-actions/.github/workflows/release.yml@main
+    uses: storytold/craft-common-actions/.github/workflows/release.yml@main
     with:
       app-name: photocraft
       app-title: PhotoCraft
@@ -81,7 +81,7 @@ concurrency:
 
 jobs:
   lint:
-    uses: dylanmtaylor/artcraft-common-actions/.github/workflows/packaging-lint.yml@main
+    uses: storytold/craft-common-actions/.github/workflows/packaging-lint.yml@main
 ```
 
 ### 3. `windows-arm64.yml`
@@ -115,7 +115,7 @@ permissions:
 
 jobs:
   windows-arm64:
-    uses: dylanmtaylor/artcraft-common-actions/.github/workflows/windows-arm64.yml@main
+    uses: storytold/craft-common-actions/.github/workflows/windows-arm64.yml@main
     with:
       app-name: wordcraft
       app-dir: WordCraft
@@ -148,7 +148,7 @@ permissions:
 
 jobs:
   freebsd:
-    uses: dylanmtaylor/artcraft-common-actions/.github/workflows/freebsd.yml@main
+    uses: storytold/craft-common-actions/.github/workflows/freebsd.yml@main
     with:
       craft-fonts-ref: 8dcdacd5153e64560d109541a47d806f26f048c0
 ```
@@ -167,6 +167,6 @@ Individual actions are also available for composing custom pipelines:
 - `actions/draft-release`: Collects artifacts, calculates SHA256 checksums, and publishes/updates draft GitHub release.
 - `actions/packaging-lint`: Steps for packaging linter.
 
-## Migration to Storytold Org
+## Storytold Organization Hosting
 
-When moving this repository from `dylanmtaylor/artcraft-common-actions` to `storytold/artcraft-common-actions`, simply search and replace `dylanmtaylor/artcraft-common-actions` with `storytold/artcraft-common-actions` in the caller workflows.
+This repository is hosted at `storytold/craft-common-actions` for all Storytold / ArtCraft craftapps.

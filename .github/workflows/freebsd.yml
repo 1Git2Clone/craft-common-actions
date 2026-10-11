@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
-        uses: dylanmtaylor/artcraft-common-actions/actions/checkout-craft-fonts@main
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
       - name: Build and test in a FreeBSD VM

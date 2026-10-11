@@ -53,7 +53,7 @@ jobs:
         with:
           key: windows-arm64-package
       - name: Install WiX
-        uses: dylanmtaylor/artcraft-common-actions/actions/install-wix@main
+        uses: storytold/craft-common-actions/actions/install-wix@main
         with:
           wix-version: ${{ inputs.wix-version }}
       - name: Build and package (unsigned)

@@ -102,7 +102,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: v
         name: Resolve version
-        uses: dylanmtaylor/artcraft-common-actions/actions/resolve-version@main
+        uses: storytold/craft-common-actions/actions/resolve-version@main
         with:
           input-version: ${{ inputs.version }}
           app-title: ${{ inputs.app-title }}
@@ -163,7 +163,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
-        uses: dylanmtaylor/artcraft-common-actions/actions/checkout-craft-fonts@main
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
@@ -269,7 +269,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
-        uses: dylanmtaylor/artcraft-common-actions/actions/checkout-craft-fonts@main
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
@@ -283,7 +283,7 @@ jobs:
         shell: bash
         run: cargo xtask version set "$VERSION"
       - name: Install WiX
-        uses: dylanmtaylor/artcraft-common-actions/actions/install-wix@main
+        uses: storytold/craft-common-actions/actions/install-wix@main
         with:
           wix-version: ${{ inputs.wix-version }}
       - name: Build, sign, package
@@ -367,10 +367,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
-        uses: dylanmtaylor/artcraft-common-actions/actions/checkout-craft-fonts@main
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
-      - uses: dylanmtaylor/artcraft-common-actions/actions/install-linux-deps@main
+      - uses: storytold/craft-common-actions/actions/install-linux-deps@main
         with:
           deb-arch: ${{ matrix.deb }}
           nfpm-version: ${{ inputs.nfpm-version }}
@@ -536,7 +536,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
-        uses: dylanmtaylor/artcraft-common-actions/actions/checkout-craft-fonts@main
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
       - name: Build and package in a FreeBSD VM
@@ -644,7 +644,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-web
-      - uses: dylanmtaylor/artcraft-common-actions/actions/install-trunk@main
+      - uses: storytold/craft-common-actions/actions/install-trunk@main
         with:
           trunk-version: ${{ inputs.trunk-version }}
       - name: Apply version override
@@ -714,7 +714,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out craft-fonts
         if: inputs.craft-fonts-ref != ''
-        uses: dylanmtaylor/artcraft-common-actions/actions/checkout-craft-fonts@main
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
@@ -726,9 +726,9 @@ jobs:
       - name: Apply version override
         if: inputs.version != ''
         run: cargo xtask version set "$VERSION"
-      - uses: dylanmtaylor/artcraft-common-actions/actions/install-riscv64-cross@main
+      - uses: storytold/craft-common-actions/actions/install-riscv64-cross@main
       - name: Install nfpm (SHA256-verified)
-        uses: dylanmtaylor/artcraft-common-actions/actions/install-nfpm@main
+        uses: storytold/craft-common-actions/actions/install-nfpm@main
         with:
           nfpm-version: ${{ inputs.nfpm-version }}
           deb-arch: amd64
@@ -765,7 +765,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: dylanmtaylor/artcraft-common-actions/actions/draft-release@main
+      - uses: storytold/craft-common-actions/actions/draft-release@main
         with:
           version: ${{ needs.version.outputs.version }}
           app-title: ${{ inputs.app-title }}
