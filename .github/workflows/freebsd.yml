@@ -18,6 +18,26 @@ on:
         type: string
         required: false
         default: ""
+      cargo-build-extra-args:
+        description: "Extra arguments to append to cargo build (optional)"
+        type: string
+        required: false
+        default: ""
+      skip-tests:
+        description: "Skip running tests (e.g. if the VM lacks GPU/oracle dependencies)"
+        type: boolean
+        required: false
+        default: false
+      run-package-check:
+        description: "Run packaging/freebsd/package.sh and verify produced tarball"
+        type: boolean
+        required: false
+        default: false
+      custom-test-command:
+        description: "Custom test commands to run instead of default cargo test"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -49,9 +69,18 @@ jobs:
             . "$HOME/.cargo/env"
             git config --global --add safe.directory "*"
             rustc --version
-            CARGO_PROFILE_DEV_DEBUG=0 cargo build --workspace --all-targets --locked
-            if [ -d "craft-fonts" ]; then
-              CRAFT_FONTS_DIR="$PWD/craft-fonts" CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ inputs.cargo-test-extra-args }}
-            else
-              CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ inputs.cargo-test-extra-args }}
+            CARGO_PROFILE_DEV_DEBUG=0 cargo build --workspace --all-targets --locked ${{ inputs.cargo-build-extra-args }}
+            if [ "${{ inputs.skip-tests }}" != "true" ]; then
+              if [ -n "${{ inputs.custom-test-command }}" ]; then
+                ${{ inputs.custom-test-command }}
+              elif [ -d "craft-fonts" ]; then
+                CRAFT_FONTS_DIR="$PWD/craft-fonts" CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ inputs.cargo-test-extra-args }}
+              else
+                CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ inputs.cargo-test-extra-args }}
+              fi
+            fi
+            if [ "${{ inputs.run-package-check }}" = "true" ] && [ -f packaging/freebsd/package.sh ]; then
+              rm -rf target/debug || true
+              CARGO_BUILD_JOBS=4 bash packaging/freebsd/package.sh
+              tar -tzf dist/release/*-freebsd-x86_64.tar.gz || true
             fi
