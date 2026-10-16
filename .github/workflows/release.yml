@@ -16,6 +16,11 @@ on:
         type: string
         required: false
         default: ""
+      web-craft-fonts:
+        description: "Build the web release with craft-fonts too (CRAFT_FONTS_DIR); needs craft-fonts-ref. Off by default: each app's build.rs picks which fonts its web build embeds"
+        type: boolean
+        required: false
+        default: false
       version:
         description: "Version override for a test run (empty: read from Cargo.toml)"
         type: string
@@ -721,10 +726,22 @@ jobs:
       - uses: storytold/craft-common-actions/actions/install-trunk@main
         with:
           trunk-version: ${{ inputs.trunk-version }}
+      - name: Check out craft-fonts
+        if: inputs.web-craft-fonts && inputs.craft-fonts-ref != ''
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
+        with:
+          ref: ${{ inputs.craft-fonts-ref }}
       - name: Apply version override
         if: inputs.version != ''
         run: cargo xtask version set "$VERSION"
       - name: Build and zip
+        if: ${{ !(inputs.web-craft-fonts && inputs.craft-fonts-ref != '') }}
+        run: packaging/web/package.sh
+      - name: Build and zip (with craft-fonts)
+        if: inputs.web-craft-fonts && inputs.craft-fonts-ref != ''
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
         run: packaging/web/package.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

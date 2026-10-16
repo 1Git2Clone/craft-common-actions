@@ -65,6 +65,10 @@ jobs:
 
 List every signing secret explicitly. The signing jobs run in the caller repo's `release` environment and read the values from there, but only for the names listed here: an unlisted name is empty. On the `release` branch the macOS and Windows jobs fail when their signing secrets are empty, rather than shipping unsigned builds.
 
+`craft-fonts-ref` feeds the desktop builds. The web build gets craft-fonts too only with
+`web-craft-fonts: true`: each app's `build.rs` decides which fonts its web build embeds (craft-fonts
+`docs/integration.md`), so opt in once that list fits the app's web size budget.
+
 ### 2. `packaging-lint.yml`
 Lints all packaging configurations and metadata:
 - `actionlint` for workflow syntax
