@@ -5,7 +5,7 @@ inputs:
   nfpm-version:
     description: "Version of nfpm to install"
     required: false
-    default: "2.47.0"
+    default: "2.48.0"
   deb-arch:
     description: "Debian architecture for nfpm package (amd64 or arm64)"
     required: false
@@ -21,6 +21,12 @@ runs:
         curl -fsSL -o "$RUNNER_TEMP/nfpm.deb" "$deb_url"
 
         case "${{ inputs.nfpm-version }}:${{ inputs.deb-arch }}" in
+          "2.48.0:amd64")
+            expected="787af76e172dd5fc7cedf4d7c5a090a2f62be9001557a4db1103e270f90ddefd"
+            ;;
+          "2.48.0:arm64")
+            expected="8e9cd8b4ed372a5e8af555a997dfe5e111cb6c7d4d757fd0a0368a35ad84a9b0"
+            ;;
           "2.47.0:amd64")
             expected="3f1cf344bd0b57373ca55636a78c08b0491f7293d609a456a9ac3b0b150fda97"
             ;;

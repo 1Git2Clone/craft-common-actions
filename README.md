@@ -188,6 +188,35 @@ jobs:
       craft-fonts-ref: 8dcdacd5153e64560d109541a47d806f26f048c0
 ```
 
+### 5. `nix.yml`
+
+Evaluates the repository's Nix flake across supported systems without building, validating flake evaluation and `Cargo.lock` synchronization.
+
+#### Caller Example:
+
+```yaml
+name: Nix
+
+on:
+  push:
+    branches: [main]
+    paths: ["flake.nix", "flake.lock", "nix/**", "Cargo.lock", ".github/workflows/nix.yml"]
+  pull_request:
+    paths: ["flake.nix", "flake.lock", "nix/**", "Cargo.lock", ".github/workflows/nix.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nix:
+    uses: storytold/craft-common-actions/.github/workflows/nix.yml@main
+```
+
 ## Composite Actions
 
 Individual actions are also available for composing custom pipelines:

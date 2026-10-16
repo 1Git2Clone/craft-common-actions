@@ -1,0 +1,30 @@
+name: "Nix"
+
+on:
+  workflow_call:
+    inputs:
+      extra-args:
+        description: "Extra arguments to pass to nix flake check"
+        type: string
+        required: false
+        default: "--no-build --all-systems"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+      - name: Check flake evaluation
+        shell: bash
+        run: |
+          if [ -f flake.nix ]; then
+            nix flake check ${{ inputs.extra-args }}
+          else
+            echo "No flake.nix present in this repository; skipping check."
+          fi

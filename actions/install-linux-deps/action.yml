@@ -9,7 +9,7 @@ inputs:
   nfpm-version:
     description: "Version of nfpm to install"
     required: false
-    default: "2.47.0"
+    default: "2.48.0"
 
 runs:
   using: "composite"
