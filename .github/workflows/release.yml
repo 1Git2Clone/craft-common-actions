@@ -102,6 +102,7 @@ permissions:
 
 jobs:
   version:
+    timeout-minutes: 10
     name: version
     runs-on: ubuntu-latest
     outputs:
@@ -118,6 +119,7 @@ jobs:
           app-title: ${{ inputs.app-title }}
 
   macos:
+    timeout-minutes: 90
     name: macOS universal
     needs: version
     runs-on: macos-15-xlarge
@@ -243,6 +245,7 @@ jobs:
           if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN" || true; fi
 
   windows:
+    timeout-minutes: 90
     name: Windows ${{ matrix.arch }}
     needs: version
     runs-on: windows-latest
@@ -371,6 +374,7 @@ jobs:
           if-no-files-found: error
 
   linux:
+    timeout-minutes: 90
     name: Linux ${{ matrix.arch }}
     needs: version
     runs-on: ${{ matrix.runner }}
@@ -472,6 +476,7 @@ jobs:
           if-no-files-found: error
 
   flatpak:
+    timeout-minutes: 90
     name: Flatpak ${{ matrix.arch }}
     needs: [version, linux]
     runs-on: ${{ matrix.runner }}
@@ -660,6 +665,7 @@ jobs:
           if-no-files-found: error
 
   web:
+    timeout-minutes: 90
     name: Web (wasm)
     if: inputs.has-web
     needs: version
@@ -750,6 +756,7 @@ jobs:
           if-no-files-found: error
 
   linux-riscv64:
+    timeout-minutes: 90
     name: Linux riscv64
     if: inputs.has-riscv64
     needs: version
@@ -852,6 +859,7 @@ jobs:
           if-no-files-found: error
 
   server:
+    timeout-minutes: 90
     name: Server Linux ${{ matrix.arch }}
     if: inputs.has-server
     needs: version
@@ -896,6 +904,7 @@ jobs:
           if-no-files-found: error
 
   release:
+    timeout-minutes: 10
     name: Draft GitHub Release
     if: "!cancelled() && !contains(needs.*.result, 'failure')"
     needs: [version, macos, windows, linux, linux-riscv64, flatpak, freebsd, web, server]

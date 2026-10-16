@@ -144,6 +144,21 @@ jobs:
 ### 4. `freebsd.yml`
 Builds and runs workspace tests inside a FreeBSD 15 VM on a Linux runner.
 
+`craft-fonts-ref` makes the checkout available to builds, default tests and custom
+tests through `CRAFT_FONTS_DIR`. Set `require-craft-fonts: true` to also export
+`CRAFT_FONTS_REQUIRED=1` and fail before building if the checkout is missing.
+The application's build script validates its required font faces.
+
+Use a multiline `custom-test-command` for separate test groups. It runs in a
+separate `sh -eu` process whose failure stops the VM script before packaging.
+Do not rely on `errexit` to catch nonfinal commands of an `&&` list followed by
+other commands; write each required test command on its own line.
+
+`run-package-check: true` requires `packaging/freebsd/package.sh` to exist and
+succeed, then requires at least one readable `*-freebsd-x86_64.tar.gz` in
+`dist/release`. Each archive is checked separately. The app's package script
+retains responsibility for its required binaries, metadata and licence files.
+
 #### Caller Example:
 ```yaml
 name: FreeBSD
@@ -190,3 +205,44 @@ Individual actions are also available for composing custom pipelines:
 ## Storytold Organization Hosting
 
 This repository is hosted at `storytold/craft-common-actions` for all Storytold / ArtCraft craftapps.
+
+## App-specific packaging checks
+
+Keep app-specific packaging assertions in the caller repository and pass their
+Bash script to `packaging-lint.yml` with
+`extra-checks-script: packaging/check-app-specific.sh`. It runs after the shared
+lint action, with the checkout and lint tools available. A missing or failing
+requested script fails the job. Native Windows installer probes remain separate
+caller jobs; Linux static lint does not replace them.
+
+## Job time limits
+
+Limits live on executable jobs in these reusable workflows, since caller jobs
+using `uses` cannot set `timeout-minutes`.
+
+| Work | Limit (minutes) |
+| --- | ---: |
+| Packaging lint | 15 |
+| Release version / draft publication | 10 |
+| Release macOS, Windows, Linux, Flatpak, web, RISC-V and server builds | 90 |
+| Release FreeBSD | 180 |
+| Standalone FreeBSD build, test and optional package | 300 |
+| Windows ARM64 package / install | 90 / 30 |
+
+The new limits leave headroom over sampled Craft app job timings; the existing
+FreeBSD and ARM64 limits are retained. Treat these as initial limits, review
+successful cold builds after rollout and lower them when the evidence supports it.
+These are per-job limits, not a total workflow duration or spend budget.
+
+## Testing workflow failure paths
+
+With Python 3 and PyYAML installed, run:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+The tests execute the FreeBSD run template under the host's POSIX shell with
+fixture build/test commands and real tar archives. They cover failures in each
+custom test group, default build/test failures, missing/corrupt packages and font
+environment propagation. They do not replace native FreeBSD caller runs.
