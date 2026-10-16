@@ -8,6 +8,11 @@ on:
         type: string
         required: false
         default: ""
+      require-craft-fonts:
+        description: "Require the supplied craft-fonts checkout during builds and tests"
+        type: boolean
+        required: false
+        default: false
       freebsd-release:
         description: "FreeBSD OS release version to run in the VM"
         type: string
@@ -63,24 +68,48 @@ jobs:
           mem: 12288
           copyback: false
           prepare: |
-            pkg install -y bash git curl pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib
+            pkg install -y bash git curl pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib dejavu
             curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
           run: |
             . "$HOME/.cargo/env"
             git config --global --add safe.directory "*"
             rustc --version
+            if [ -d craft-fonts ]; then
+              export CRAFT_FONTS_DIR="$PWD/craft-fonts"
+            fi
+            if [ "${{ inputs.require-craft-fonts }}" = "true" ]; then
+              if [ ! -d craft-fonts ]; then
+                echo "error: required craft-fonts checkout is missing" >&2
+                exit 1
+              fi
+              export CRAFT_FONTS_REQUIRED=1
+            fi
             CARGO_PROFILE_DEV_DEBUG=0 cargo build --workspace --all-targets --locked ${{ inputs.cargo-build-extra-args }}
             if [ "${{ inputs.skip-tests }}" != "true" ]; then
-              if [ -n "${{ inputs.custom-test-command }}" ]; then
-                ${{ inputs.custom-test-command }}
-              elif [ -d "craft-fonts" ]; then
-                CRAFT_FONTS_DIR="$PWD/craft-fonts" CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ inputs.cargo-test-extra-args }}
+              if [ "${{ inputs.custom-test-command != '' }}" = "true" ]; then
+                # Isolate the command list: an early failure in an && chain must not
+                # be hidden by a later successful packaging command in this script.
+                sh -eu <<'CRAFT_CUSTOM_TESTS' || exit "$?"
+            ${{ inputs.custom-test-command }}
+            CRAFT_CUSTOM_TESTS
               else
                 CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ inputs.cargo-test-extra-args }}
               fi
             fi
-            if [ "${{ inputs.run-package-check }}" = "true" ] && [ -f packaging/freebsd/package.sh ]; then
-              rm -rf target/debug || true
+            if [ "${{ inputs.run-package-check }}" = "true" ]; then
+              if [ ! -f packaging/freebsd/package.sh ]; then
+                echo "error: requested FreeBSD packaging script is missing" >&2
+                exit 1
+              fi
+              rm -rf target/debug
               CARGO_BUILD_JOBS=4 bash packaging/freebsd/package.sh
-              tar -tzf dist/release/*-freebsd-x86_64.tar.gz || true
+              # Check every produced archive; an unmatched glob or unreadable tarball
+              # must fail instead of turning a requested package check into a no-op.
+              for archive in dist/release/*-freebsd-x86_64.tar.gz; do
+                if [ ! -f "$archive" ]; then
+                  echo "error: no FreeBSD x86_64 package was produced" >&2
+                  exit 1
+                fi
+                tar -tzf "$archive"
+              done
             fi

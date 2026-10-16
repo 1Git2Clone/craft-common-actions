@@ -1,0 +1,29 @@
+name: Shared FreeBSD workflow tests
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/freebsd.yml
+      - .github/workflows/test-freebsd.yml
+      - tests/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/freebsd.yml
+      - .github/workflows/test-freebsd.yml
+      - tests/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install YAML parser
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-yaml
+      - name: Exercise failing tests, package validation and required fonts
+        run: /usr/bin/python3 -m unittest discover -s tests -v
