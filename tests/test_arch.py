@@ -70,6 +70,35 @@ class ArchActionTests(unittest.TestCase):
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("not found", res.stderr)
 
+    @unittest.skipUnless(
+        shutil.which("makepkg") and shutil.which("bsdtar") and shutil.which("zstd"),
+        "makepkg/bsdtar/zstd not installed",
+    )
+    def test_arch_package_build_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            tar_root = tmp_path / "myapp-1.2.3-linux-x86_64"
+            (tar_root / "bin").mkdir(parents=True)
+            (tar_root / "share/applications").mkdir(parents=True)
+            (tar_root / "bin/myapp").write_text("#!/bin/sh\necho hello\n")
+            os.chmod(tar_root / "bin/myapp", 0o755)
+            (tar_root / "share/applications/com.example.myapp.desktop").write_text(
+                "[Desktop Entry]\nName=MyApp\nExec=myapp\nType=Application\n"
+            )
+            tarball = tmp_path / "myapp-1.2.3-linux-x86_64.tar.gz"
+            with tarfile.open(tarball, "w:gz") as tar:
+                tar.add(tar_root, arcname=tar_root.name)
+            out_dir = tmp_path / "dist"
+            res = subprocess.run(
+                [str(ARCH_SCRIPT), str(tarball), "x86_64", str(out_dir)],
+                capture_output=True,
+                text=True,
+                env={**os.environ, "ARCH_LICENSE": "MIT", "PKGREL": "1"},
+            )
+            self.assertEqual(res.returncode, 0, f"arch-package.sh failed: {res.stderr}\n{res.stdout}")
+            pkg_file = out_dir / "myapp-1.2.3-linux-x86_64.pkg.tar.zst"
+            self.assertTrue(pkg_file.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

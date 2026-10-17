@@ -155,7 +155,7 @@ optdepends=(
   'xdg-desktop-portal: native desktop integration and file dialogs'
   'cups: printing support'
 )
-provides=('$app=\$pkgver-\$pkgrel')
+provides=("$app=\$pkgver-\$pkgrel")
 conflicts=('$app' '$app-bin' '$app-git')
 options=('!strip' '!debug')
 
