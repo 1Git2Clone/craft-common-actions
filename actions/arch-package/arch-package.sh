@@ -18,7 +18,7 @@ epoch="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
-[ -f "$tarball" ] || die "$tarball not found"
+[[ -f "$tarball" ]] || die "$tarball not found"
 
 for tool in makepkg bsdtar zstd tar; do
   command -v "$tool" >/dev/null || die "$tool not found"
@@ -44,13 +44,11 @@ tar -xzf "$tarball" -C "$stage"
 shopt -s nullglob
 subdirs=("$stage"/*)
 shopt -u nullglob
-if [ "${#subdirs[@]}" -eq 1 ] && [ -d "${subdirs[0]}" ]; then
-  if [ -d "${subdirs[0]}/bin" ] || [ -d "${subdirs[0]}/share" ]; then
-    shopt -s dotglob
-    mv "${subdirs[0]}"/* "$stage/"
-    shopt -u dotglob
-    rmdir "${subdirs[0]}"
-  fi
+if [[ "${#subdirs[@]}" -eq 1 && -d "${subdirs[0]}" && ( -d "${subdirs[0]}/bin" || -d "${subdirs[0]}/share" ) ]]; then
+  shopt -s dotglob
+  mv "${subdirs[0]}"/* "$stage/"
+  shopt -u dotglob
+  rmdir "${subdirs[0]}"
 fi
 
 # Detect application name and version
@@ -62,7 +60,7 @@ else
   shopt -s nullglob
   bins=("$stage"/bin/*)
   shopt -u nullglob
-  [ "${#bins[@]}" -gt 0 ] || die "no executables found in $tarball"
+  [[ "${#bins[@]}" -gt 0 ]] || die "no executables found in $tarball"
   app="$(basename "${bins[0]}")"
   app="${app%-cli}"
   raw_version="0.0.0"
@@ -70,7 +68,7 @@ fi
 
 # Format Arch pkgver (no hyphens or tildes allowed in pkgver)
 upstream="${raw_version%-*}"
-if [ "$upstream" != "$raw_version" ]; then
+if [[ "$upstream" != "$raw_version" ]]; then
   rel="${raw_version##*-}"
   if [[ "$rel" =~ ^[0-9]+$ ]]; then
     pkgrel="$rel"
@@ -83,7 +81,7 @@ pkgver="${pkgver//-/}"
 shopt -s nullglob
 desktops=("$stage"/share/applications/*.desktop)
 shopt -u nullglob
-if [ "${#desktops[@]}" -gt 0 ]; then
+if [[ "${#desktops[@]}" -gt 0 ]]; then
   pkgname="$(basename "${desktops[0]}" .desktop)"
 else
   pkgname="ai.storyteller.$app"
@@ -94,19 +92,19 @@ pkgdesc=""
 shopt -s nullglob
 metainfos=("$stage"/share/metainfo/*.metainfo.xml)
 shopt -u nullglob
-if [ "${#metainfos[@]}" -gt 0 ]; then
+if [[ "${#metainfos[@]}" -gt 0 ]]; then
   pkgdesc="$(sed -n 's:.*<summary>\(.*\)</summary>.*:\1:p' "${metainfos[0]}" 2>/dev/null | head -n 1 |
     sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' -e "s/&apos;/'/g" -e 's/&amp;/\&/g')"
 fi
-if [ -z "$pkgdesc" ]; then
+if [[ -z "$pkgdesc" ]]; then
   pkgdesc="$app"
 fi
 
 # Determine homepage url from AppStream metainfo if available
 url="https://storyteller.ai"
-if [ "${#metainfos[@]}" -gt 0 ]; then
+if [[ "${#metainfos[@]}" -gt 0 ]]; then
   metainfo_url="$(sed -n 's:.*<url type="homepage">\(.*\)</url>.*:\1:p' "${metainfos[0]}" 2>/dev/null | head -n 1)"
-  if [ -n "$metainfo_url" ]; then url="$metainfo_url"; fi
+  if [[ -n "$metainfo_url" ]]; then url="$metainfo_url"; fi
 fi
 
 # Format SPDX license expression into Arch license array
@@ -114,13 +112,13 @@ license_formatted=()
 IFS='|' read -ra parts <<< "$(sed -E 's/ (OR|AND) /|/g' <<< "$license")"
 for part in "${parts[@]}"; do
   part="$(echo "$part" | xargs)"
-  [ -n "$part" ] && license_formatted+=("'$part'")
+  [[ -n "$part" ]] && license_formatted+=("'$part'")
 done
 license_str="${license_formatted[*]}"
 
 # Create makepkg.conf override
 cat > "$work/makepkg.conf" <<EOF
-if [ -f /etc/makepkg.conf ]; then
+if [[ -f /etc/makepkg.conf ]]; then
   source /etc/makepkg.conf
 fi
 CARCH="$arch"
@@ -186,7 +184,7 @@ echo "==> Building Arch package $pkgname-$pkgver-$pkgrel for $arch with makepkg.
 shopt -s nullglob
 built_pkgs=("$work"/*.pkg.tar.zst)
 shopt -u nullglob
-[ "${#built_pkgs[@]}" -eq 1 ] || die "expected 1 built package, found ${#built_pkgs[@]}"
+[[ "${#built_pkgs[@]}" -eq 1 ]] || die "expected 1 built package, found ${#built_pkgs[@]}"
 pkg_file="${built_pkgs[0]}"
 
 if command -v namcap >/dev/null; then
