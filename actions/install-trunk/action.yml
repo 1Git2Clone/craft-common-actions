@@ -14,13 +14,13 @@ runs:
       shell: bash
       run: |
         tar_url="https://github.com/trunk-rs/trunk/releases/download/v${{ inputs.trunk-version }}/trunk-x86_64-unknown-linux-gnu.tar.gz"
-        curl -fsSL -o "$RUNNER_TEMP/trunk.tar.gz" "$tar_url"
+        curl --proto '=https' --proto-redir =https -fsSL -o "$RUNNER_TEMP/trunk.tar.gz" "$tar_url"
         case "${{ inputs.trunk-version }}" in
           "0.21.14")
             expected="f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b"
             ;;
           *)
-            curl -fsSL -o "$RUNNER_TEMP/trunk.sha256" "$tar_url.sha256"
+            curl --proto '=https' --proto-redir =https -fsSL -o "$RUNNER_TEMP/trunk.sha256" "$tar_url.sha256"
             expected=$(awk '{print $1}' "$RUNNER_TEMP/trunk.sha256")
             ;;
         esac
