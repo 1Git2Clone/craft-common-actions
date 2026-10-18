@@ -18,7 +18,7 @@ runs:
       shell: bash
       run: |
         deb_url="https://github.com/goreleaser/nfpm/releases/download/v${{ inputs.nfpm-version }}/nfpm_${{ inputs.nfpm-version }}_${{ inputs.deb-arch }}.deb"
-        curl -fsSL -o "$RUNNER_TEMP/nfpm.deb" "$deb_url"
+        curl --proto '=https' --proto-redir =https -fsSL -o "$RUNNER_TEMP/nfpm.deb" "$deb_url"
 
         case "${{ inputs.nfpm-version }}:${{ inputs.deb-arch }}" in
           "2.48.0:amd64")
@@ -34,7 +34,7 @@ runs:
             expected="27419eb382695a7942be8ad52259f3ec1854fad001b3ae4baed34ce39a223b97"
             ;;
           *)
-            curl -fsSL -o "$RUNNER_TEMP/checksums.txt" "https://github.com/goreleaser/nfpm/releases/download/v${{ inputs.nfpm-version }}/checksums.txt"
+            curl --proto '=https' --proto-redir =https -fsSL -o "$RUNNER_TEMP/checksums.txt" "https://github.com/goreleaser/nfpm/releases/download/v${{ inputs.nfpm-version }}/checksums.txt"
             expected=$(grep -E "nfpm_${{ inputs.nfpm-version }}_${{ inputs.deb-arch }}\.deb" "$RUNNER_TEMP/checksums.txt" | awk '{print $1}')
             ;;
         esac
