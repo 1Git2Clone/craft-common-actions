@@ -255,7 +255,7 @@ using `uses` cannot set `timeout-minutes`.
 | Packaging lint | 15 |
 | Release version / draft publication | 10 |
 | Release macOS, Windows, Linux, Flatpak, web, RISC-V and server builds | 90 |
-| Release FreeBSD | 180 |
+| Release FreeBSD | 300 |
 | Standalone FreeBSD build, test and optional package | 300 |
 | Windows ARM64 package / install | 90 / 30 |
 
