@@ -6,6 +6,8 @@ Requires PyYAML (python3-yaml on the hosted Ubuntu runner).
 """
 
 import os
+import json
+from types import SimpleNamespace
 from pathlib import Path
 import re
 import subprocess
@@ -18,12 +20,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = Path(os.environ.get("FREEBSD_WORKFLOW", ROOT / ".github/workflows/freebsd.yml"))
 DATA = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-TEMPLATE = next(step["with"]["run"] for step in DATA["jobs"]["freebsd"]["steps"] if "with" in step and "run" in step["with"])
+STEPS = DATA["jobs"]["freebsd"]["steps"]
+BUILD_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Build and test")
+PACKAGE_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Build and validate the FreeBSD package")
 
 
 class FreeBSDRunTests(unittest.TestCase):
     def run_vm(self, *, command="", fail_test=0, package="valid", package_check=True,
-               skip_tests=False, fonts=False, require_fonts=False, fail_build=False, arch="x86_64"):
+               skip_tests=False, fonts=False, require_fonts=False, fail_build=False, arch="x86_64", restore_failed=False, checkpoint_failed=False):
         inputs = {key: value.get("default", "") for key, value in DATA["on"]["workflow_call"]["inputs"].items()}
         inputs.update({
             "custom-test-command": command,
@@ -38,10 +42,15 @@ class FreeBSDRunTests(unittest.TestCase):
                 return str(bool(command)).lower()
             return inputs[key]
 
-        script = re.sub(r"\$\{\{ inputs\.(.*?) \}\}", replace, TEMPLATE)
-        script = script.replace("${{ matrix.arch }}", arch)
-        # The host rustup environment is irrelevant: keep all commands inside the fixture.
-        script = script.replace('. "$HOME/.cargo/env"', ': # isolated cargo/rustc shims')
+        def render(template):
+            script = re.sub(r"\$\{\{ inputs\.(.*?) \}\}", replace, template)
+            script = script.replace("${{ matrix.arch }}", arch)
+            script = script.replace("${{ steps.cargo-cache.outcome }}", "failure" if restore_failed else "success")
+            script = script.replace("${{ steps.package-cache.outcome }}", "failure" if checkpoint_failed else "success")
+            # Redirect destructive cleanup to the fixture; never touch real guest paths.
+            script = script.replace("/var/tmp/", str(work / "guest") + "/")
+            return script.replace('. "$HOME/.cargo/env"', ': # isolated cargo/rustc shims')
+
         with tempfile.TemporaryDirectory(prefix="shared-freebsd-test-") as directory:
             work = Path(directory)
             tools = work / "tools"
@@ -73,6 +82,7 @@ fi
                 path.write_text("""#!/bin/bash
 set -euo pipefail
 touch package-ran
+printf 'package|%s|%s|%s\\n' "${CRAFT_FONTS_DIR-}" "${CRAFT_FONTS_REQUIRED-}" package >> "$PWD/package.log"
 case "$PACKAGE_MODE" in
   failed) exit 43 ;;
   absent) exit 0 ;;
@@ -95,10 +105,20 @@ fi
             env.update(PATH=str(tools) + os.pathsep + env["PATH"], FAIL_TEST=str(fail_test),
                        PACKAGE_MODE=package, FAIL_BUILD=str(fail_build).lower(),
                        TARGET_ARCH=arch)
-            result = subprocess.run(["/bin/sh", "-eu", "-c", script], cwd=work, env=env,
+            for profile in ("debug", "release"):
+                path = work / "guest/craft-target" / profile
+                path.mkdir(parents=True)
+                (path / "partial").write_text("incomplete cache transfer")
+            result = subprocess.run(["/bin/sh", "-c", render(BUILD_TEMPLATE)], cwd=work, env=env,
                                     text=True, capture_output=True, timeout=15)
+            if result.returncode == 0 and package_check:
+                # Separate processes share files, never shell exports.
+                result = subprocess.run(["/bin/sh", "-c", render(PACKAGE_TEMPLATE)], cwd=work, env=env.copy(),
+                                        text=True, capture_output=True, timeout=15)
             log = (work / "cargo.log").read_text().splitlines() if (work / "cargo.log").exists() else []
-            outcome = dict(code=result.returncode, packaged=(work / "package-ran").exists(),
+            package_log = (work / "package.log").read_text().splitlines() if (work / "package.log").exists() else []
+            remaining = [p.parent.name for p in (work / "guest/craft-target").glob("*/partial")]
+            outcome = dict(package_log=package_log, remaining=remaining, code=result.returncode, packaged=(work / "package-ran").exists(),
                            log=log, output=result.stdout + result.stderr)
             return outcome
 
@@ -164,7 +184,7 @@ fi
             with self.subTest(command=command):
                 result = self.run_vm(command=command, fonts=True, require_fonts=True)
                 self.assertEqual(result["code"], 0, result)
-                for line in result["log"]:
+                for line in result["log"] + result["package_log"]:
                     _, directory, required, _ = line.split("|", 3)
                     self.assertTrue(directory.endswith("/craft-fonts"), result)
                     self.assertEqual(required, "1", result)
@@ -179,15 +199,36 @@ fi
             with self.subTest(fonts=fonts):
                 result = self.run_vm(fonts=fonts)
                 self.assertEqual(result["code"], 0, result)
-                for line in result["log"]:
+                for line in result["log"] + result["package_log"]:
                     _, directory, required, _ = line.split("|", 3)
                     self.assertEqual(bool(directory), fonts, result)
                     self.assertEqual(required, "", result)
 
+    def test_failed_caches_fall_back_to_clean_build_and_package(self):
+        result = self.run_vm(restore_failed=True, checkpoint_failed=True)
+        self.assertEqual(result["code"], 0, result)
+        self.assertTrue(result["packaged"], result)
+        self.assertEqual(result["remaining"], [], result)
+
+    def test_packaging_always_reclaims_debug_space(self):
+        result = self.run_vm()
+        self.assertEqual(result["code"], 0, result)
+        self.assertNotIn("debug", result["remaining"], result)
+
     def test_matrix_defined_in_workflow(self):
         matrix = DATA["jobs"]["freebsd"].get("strategy", {}).get("matrix", {})
         self.assertIn("arch", matrix)
-        self.assertEqual(matrix["arch"], ["x86_64", "aarch64"])
+        expression = matrix["arch"].removeprefix("${{").removesuffix("}}").strip()
+        expression = expression.replace("&&", "and").replace("||", "or")
+        for event in ("pull_request", "pull_request_target", "push", "schedule", "workflow_dispatch"):
+            for override in ("", '["aarch64"]', '["x86_64","aarch64"]'):
+                with self.subTest(event=event, override=override):
+                    result = eval(expression, {"__builtins__": {}}, {
+                        "fromJSON": json.loads, "inputs": SimpleNamespace(architectures=override),
+                        "github": SimpleNamespace(event_name=event),
+                    })
+                    expected = json.loads(override) if override else (["x86_64"] if event.startswith("pull_request") else ["x86_64", "aarch64"])
+                    self.assertEqual(result, expected)
 
     def test_packaging_works_for_all_matrix_architectures(self):
         for arch in ("x86_64", "aarch64"):
@@ -206,7 +247,9 @@ fi
     def vm_steps(self):
         release = yaml.load((ROOT / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)
         for name, job in (("freebsd.yml", DATA["jobs"]["freebsd"]), ("release.yml", release["jobs"]["freebsd"])):
-            yield name, next(step["with"] for step in job["steps"] if "with" in step and "prepare" in step["with"])
+            vm = dict(next(step["with"] for step in job["steps"] if "with" in step and "prepare" in step["with"]))
+            vm["run"] = next(step["run"] for step in job["steps"] if step.get("shell") == "freebsd {0}")
+            yield name, vm
 
     def test_aarch64_installs_rust_from_packages_and_x86_64_uses_rustup(self):
         # rustup has no aarch64-unknown-freebsd toolchain: the VM must not ask it for one.

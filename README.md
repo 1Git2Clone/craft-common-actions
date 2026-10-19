@@ -143,7 +143,54 @@ jobs:
 ```
 
 ### 4. `freebsd.yml`
-Builds and runs workspace tests across a matrix (x86_64, aarch64) inside a FreeBSD 15 VM on a Linux runner.
+Builds and runs workspace tests inside a FreeBSD 15 VM on a Linux runner.
+Pull requests default to `x86_64`; pushes, schedules and manual runs retain both
+`x86_64` and `aarch64`. ARM64 is software-emulated on the x86 Linux runner and can
+take several hours. The release workflow continues to build **both** FreeBSD
+architectures, including their release artifacts.
+
+The optional `architectures` input overrides the check matrix with a JSON array,
+for example `'["aarch64"]'` for a dedicated ARM check or
+`'["x86_64","aarch64"]'` for an explicit full check. Existing callers need no
+changes. A reusable workflow cannot install a schedule in its caller repository;
+add a caller `schedule` if nightly coverage is desired. If branch protection requires
+the ARM job by name, remove that required check when adopting the new PR default,
+or explicitly request both architectures until that policy is approved. Main/release pushes and
+manual runs keep their existing full coverage.
+
+Both this workflow and the FreeBSD jobs in `release.yml` cache Cargo registry/git
+data and compiled targets through `actions/freebsd-cargo-cache`. The VM starts
+first; the action fingerprints its actual Rust compiler, FreeBSD kernel/userland,
+architecture and installed package versions. Inputs (including font refs and
+feature/test options), manifests, lockfiles, build scripts, Cargo configuration,
+toolchain files and packaging scripts also partition the cache. New commits may
+restore a compatible earlier commit; toolchain/configuration/lockfile changes
+start a new cache. Build metadata changes still go through Cargo's normal
+invalidation. The test and release workflows use separate profile namespaces. The workflow-file
+pattern fingerprints the caller's configuration; changes to the shared workflow
+that need a new namespace must bump the cache action's version prefix.
+
+Cache data is restored on the host and explicitly transferred to the guest's
+`/var/tmp/craft-cargo` and `/var/tmp/craft-target`. Only registry/git data and
+`debug`/`release` artifacts are saved, excluding incremental state, Cargo
+credentials/config and Rust toolchains. Successful non-PR runs save caches on a best-effort basis; PRs
+only restore. Restore, checkpoint and save failures are non-blocking; each phase has a 10-minute
+time budget. A failed
+restore discards partial guest data before building; a failed checkpoint discards
+the partial release profile before packaging. Required build/package steps reclaim
+debug disk space independently of the optional checkpoint. GitHub's normal repository and branch cache access rules apply.
+The VM's base image cache is separate from this Cargo cache.
+
+For package checks, debug artifacts are checkpointed on the host before freeing
+guest disk space and loading the cached release profile. Release jobs keep their
+compiled target until the cache has been copied out, copy only the release
+archives back and upload them before attempting the optional cache save. Neither workflow copies the entire VM workspace back.
+Cargo cache payloads are not size-pruned locally. GitHub manages compressed cache
+storage and eviction under the repository's configured limits and applicable
+organization/enterprise policies. Architectures, profiles and revisions share
+that quota with other workflows.
+Cache storage and transfer time should be monitored against repository quotas;
+the first run is cold, and no fixed speed-up is assumed.
 
 `craft-fonts-ref` makes the checkout available to builds, default tests and custom
 tests through `CRAFT_FONTS_DIR`. Set `require-craft-fonts: true` to also export
