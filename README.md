@@ -185,11 +185,10 @@ For package checks, debug artifacts are checkpointed on the host before freeing
 guest disk space and loading the cached release profile. Release jobs keep their
 compiled target until the cache has been copied out, copy only the release
 archives back and upload them before attempting the optional cache save. Neither workflow copies the entire VM workspace back.
-Each Cargo cache payload is capped at **2 GiB uncompressed**, with guest sizes
-checked before export. Oversized components are omitted with a notice; release
-artifacts take priority over debug artifacts when both cannot fit. Restored caches
-are bounded too. This bounds each entry, not the repository's total: architectures,
-profiles and revisions still compete with other workflows under its cache quota.
+Cargo cache payloads are not size-pruned locally. GitHub manages compressed cache
+storage and eviction under the repository's configured limits and applicable
+organization/enterprise policies. Architectures, profiles and revisions share
+that quota with other workflows.
 Cache storage and transfer time should be monitored against repository quotas;
 the first run is cold, and no fixed speed-up is assumed.
 

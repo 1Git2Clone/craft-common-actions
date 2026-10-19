@@ -35,7 +35,7 @@ class CargoCacheTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.tools) + os.pathsep + os.environ["PATH"],
                         HOME=str(self.root / "home"), RUNNER_TEMP=str(self.root / "host"),
                         FIXTURE_GUEST=str(self.guest), REAL_RSYNC=shutil.which("rsync"),
-                        CACHE_PHASE="restore", CACHE_PROFILE="debug", CACHE_CAN_SAVE="true", CACHE_MAX_KIB="2097152",
+                        CACHE_PHASE="restore", CACHE_PROFILE="debug", CACHE_CAN_SAVE="true",
                         CACHE_CONFIGURATION='{"features":"heif","fonts":"abc"}',
                         CACHE_SOURCE_HASH="lock-and-build-config", GITHUB_SHA="commit1",
                         GITHUB_WORKSPACE=str(self.root),
@@ -158,29 +158,25 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         self.assertIn("github.event_name != 'pull_request'", save["if"])
         self.assertIn("github.event_name != 'pull_request_target'", save["if"])
 
-    def test_oversized_profile_is_skipped_before_transfer(self):
+    def test_reported_large_profiles_are_saved_and_restored_without_pruning(self):
+        # Represent profiles >2 GiB without allocating gigabytes in a unit test.
+        # A local size-pruning implementation would discard these components.
+        self.tool("du", "print('3145728\\tfixture')\n")
         self.transfer("restore")
-        self.write(self.guest, "var/tmp/craft-target/debug/large", "x" * 131072)
-        (self.root / "home/rsync.log").write_text("")
-        self.transfer("save", CACHE_MAX_KIB="64")
-        self.assertNotIn("freebsd:/var/tmp/craft-target/debug/", (self.root / "home/rsync.log").read_text())
-        self.assertFalse((self.cache / "target/debug/large").exists())
-        self.assertLessEqual(int(subprocess.check_output(["du", "-sk", str(self.cache)]).split()[0]), 64)
-
-    def test_oversized_restored_cache_is_trimmed_before_guest_transfer(self):
-        self.write(self.cache, "target/debug/large", "x" * 131072)
-        self.write(self.cache, "registry/cache/small.crate", "source")
-        self.transfer("restore", CACHE_MAX_KIB="64")
-        self.assertFalse((self.guest / "var/tmp/craft-target/debug/large").exists())
-        self.assertTrue((self.guest / "var/tmp/craft-cargo/registry/cache/small.crate").exists())
-
-    def test_release_profile_replaces_debug_when_budget_is_full(self):
-        self.transfer("restore")
-        self.write(self.cache, "target/debug/large", "x" * 40000)
-        self.write(self.guest, "var/tmp/craft-target/release/large", "y" * 40000)
-        self.transfer("save", CACHE_MAX_KIB="64")
-        self.assertFalse((self.cache / "target/debug/large").exists())
-        self.assertTrue((self.cache / "target/release/large").exists())
+        for profile in ("debug", "release"):
+            self.write(self.guest, f"var/tmp/craft-target/{profile}/deps/app", profile * 16384)
+        self.write(self.guest, "var/tmp/craft-cargo/registry/src/dependency/lib.rs", "source")
+        self.transfer("save", CACHE_MAX_KIB="2097152")
+        for profile in ("debug", "release"):
+            self.assertEqual((self.cache / f"target/{profile}/deps/app").read_text(), profile * 16384)
+        self.assertEqual((self.cache / "registry/src/dependency/lib.rs").read_text(), "source")
+        # Restore both profiles in separate invocations, as the real VM does.
+        shutil.rmtree(self.guest / "var/tmp/craft-target")
+        self.transfer("restore", CACHE_MAX_KIB="2097152")
+        self.assertTrue((self.guest / "var/tmp/craft-target/debug/deps/app").is_file())
+        self.transfer("restore", CACHE_PROFILE="release", CACHE_MAX_KIB="2097152")
+        self.assertTrue((self.guest / "var/tmp/craft-target/release/deps/app").is_file())
+        self.assertTrue((self.cache / "target/debug/deps/app").is_file())
 
     def test_failed_export_discards_partial_host_profile(self):
         self.transfer("restore")
@@ -194,14 +190,6 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         self.write(self.guest, "var/tmp/craft-target/release/app", "built")
         self.transfer("save", CACHE_PROFILE="release")
         self.assertEqual((self.cache / "target/release/app").read_text(), "built")
-
-    def test_oversized_new_profile_preserves_smaller_restored_profile(self):
-        self.write(self.cache, "target/release/app", "previous-release")
-        self.write(self.cache, "target/debug/app", "previous-debug")
-        self.write(self.guest, "var/tmp/craft-target/release/app", "x" * 131072)
-        self.transfer("save", CACHE_PROFILE="release", CACHE_MAX_KIB="64")
-        self.assertEqual((self.cache / "target/release/app").read_text(), "previous-release")
-        self.assertEqual((self.cache / "target/debug/app").read_text(), "previous-debug")
 
     @unittest.skipUnless(shutil.which("csh") or shutil.which("tcsh"), "csh/tcsh required")
     def test_csh_login_shell_supports_identity_checkpoint_and_save(self):
@@ -223,9 +211,6 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         self.assertEqual((self.cache / "target/debug/build/dependency/incremental/lib.rs").read_text(), "keep")
 
     def test_untouched_empty_guest_profile_preserves_host_artifacts(self):
-        # Model ext4's nonzero empty-directory size even on APFS (which reports 0).
-        real_du = shutil.which("du")
-        self.tool("du", f"import subprocess, sys\nfrom pathlib import Path\np = Path(sys.argv[-1])\nif p.is_dir() and not any(p.iterdir()):\n    print('4\\t' + str(p))\nelse:\n    sys.exit(subprocess.run([{real_du!r}, *sys.argv[1:]]).returncode)\n")
         self.write(self.cache, "target/release/app", "cached-release")
         self.transfer("restore")
         self.assertFalse(any((self.guest / "var/tmp/craft-target/release").iterdir()))
