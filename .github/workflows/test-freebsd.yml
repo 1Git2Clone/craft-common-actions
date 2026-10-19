@@ -3,6 +3,10 @@ name: Shared FreeBSD workflow tests
 'on':
   workflow_dispatch:
     inputs:
+      runner-probe:
+        description: Probe host architecture and KVM availability only
+        type: boolean
+        default: false
       freebsd-canary:
         description: Run real Launcher cold/warm check and release-package canaries on both architectures
         type: boolean
@@ -330,7 +334,29 @@ jobs:
         '
     needs:
     - version
-run-name: FreeBSD x86 warm candidate canaries
+  runner-probe:
+    name: Host probe ${{ matrix.runner }}
+    if: github.event_name == 'workflow_dispatch' && inputs.runner-probe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - name: Inspect architecture and hardware virtualization device
+        run: |
+          uname -a
+          lscpu
+          if [ -c /dev/kvm ]; then
+            ls -l /dev/kvm
+            echo 'KVM device is present'
+          else
+            echo 'KVM device is absent; a FreeBSD VM cannot use KVM acceleration on this runner'
+          fi
+
+
+run-name: ${{ inputs.runner-probe && 'FreeBSD host virtualization probe' || 'FreeBSD x86 warm candidate canaries' }}
 concurrency:
   group: freebsd-cache-warm-${{ github.run_id }}
   cancel-in-progress: false
