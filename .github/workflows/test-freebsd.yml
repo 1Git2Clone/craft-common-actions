@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - .github/workflows/freebsd.yml
+      - .github/workflows/release.yml
+      - actions/freebsd-cargo-cache/**
       - .github/workflows/test-freebsd.yml
       - tests/**
   push:
     branches: [main]
     paths:
       - .github/workflows/freebsd.yml
+      - .github/workflows/release.yml
+      - actions/freebsd-cargo-cache/**
       - .github/workflows/test-freebsd.yml
       - tests/**
   workflow_dispatch:

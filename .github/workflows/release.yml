@@ -607,6 +607,9 @@ jobs:
       matrix:
         arch: [x86_64, aarch64]
     env:
+      CARGO_HOME: /var/tmp/craft-cargo
+      CARGO_TARGET_DIR: /var/tmp/craft-target
+      CARGO_BUILD_JOBS: 4
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: 0
       RUST_BACKTRACE: 1
@@ -663,7 +666,7 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
-      - name: Build and package in a FreeBSD VM
+      - name: Start the FreeBSD VM
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
           release: ${{ inputs.freebsd-release == '15.1-STABLE' && '15.1' || inputs.freebsd-release }}
@@ -671,8 +674,11 @@ jobs:
           usesh: true
           cpu: 4
           mem: 12288
-          envs: "VERSION BUILD_DATE BUILD_SHA INPUT_VERSION CADCRAFT_VERSION CADCRAFT_BUILD_DATE CADCRAFT_BUILD_SHA ARTCRAFT_LAUNCHER_VERSION ARTCRAFT_LAUNCHER_BUILD_DATE ARTCRAFT_LAUNCHER_BUILD_SHA DECKCRAFT_VERSION DECKCRAFT_BUILD_DATE DECKCRAFT_BUILD_SHA DESIGNCRAFT_VERSION DESIGNCRAFT_BUILD_DATE DESIGNCRAFT_BUILD_SHA EFFECTCRAFT_VERSION EFFECTCRAFT_BUILD_DATE EFFECTCRAFT_BUILD_SHA FILMCRAFT_VERSION FILMCRAFT_BUILD_DATE FILMCRAFT_BUILD_SHA GRIDCRAFT_VERSION GRIDCRAFT_BUILD_DATE GRIDCRAFT_BUILD_SHA LIGHTCRAFT_VERSION LIGHTCRAFT_BUILD_DATE LIGHTCRAFT_BUILD_SHA PDFCRAFT_VERSION PDFCRAFT_BUILD_DATE PDFCRAFT_BUILD_SHA PHOTOCRAFT_VERSION PHOTOCRAFT_BUILD_DATE PHOTOCRAFT_BUILD_SHA SOUNDCRAFT_VERSION SOUNDCRAFT_BUILD_DATE SOUNDCRAFT_BUILD_SHA VECTORCRAFT_VERSION VECTORCRAFT_BUILD_DATE VECTORCRAFT_BUILD_SHA WORDCRAFT_VERSION WORDCRAFT_BUILD_DATE WORDCRAFT_BUILD_SHA FIGCRAFT_VERSION FIGCRAFT_BUILD_DATE FIGCRAFT_BUILD_SHA"
+          copyback: false
+          envs: "CARGO_HOME CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_JOBS VERSION BUILD_DATE BUILD_SHA INPUT_VERSION CADCRAFT_VERSION CADCRAFT_BUILD_DATE CADCRAFT_BUILD_SHA ARTCRAFT_LAUNCHER_VERSION ARTCRAFT_LAUNCHER_BUILD_DATE ARTCRAFT_LAUNCHER_BUILD_SHA DECKCRAFT_VERSION DECKCRAFT_BUILD_DATE DECKCRAFT_BUILD_SHA DESIGNCRAFT_VERSION DESIGNCRAFT_BUILD_DATE DESIGNCRAFT_BUILD_SHA EFFECTCRAFT_VERSION EFFECTCRAFT_BUILD_DATE EFFECTCRAFT_BUILD_SHA FILMCRAFT_VERSION FILMCRAFT_BUILD_DATE FILMCRAFT_BUILD_SHA GRIDCRAFT_VERSION GRIDCRAFT_BUILD_DATE GRIDCRAFT_BUILD_SHA LIGHTCRAFT_VERSION LIGHTCRAFT_BUILD_DATE LIGHTCRAFT_BUILD_SHA PDFCRAFT_VERSION PDFCRAFT_BUILD_DATE PDFCRAFT_BUILD_SHA PHOTOCRAFT_VERSION PHOTOCRAFT_BUILD_DATE PHOTOCRAFT_BUILD_SHA SOUNDCRAFT_VERSION SOUNDCRAFT_BUILD_DATE SOUNDCRAFT_BUILD_SHA VECTORCRAFT_VERSION VECTORCRAFT_BUILD_DATE VECTORCRAFT_BUILD_SHA WORDCRAFT_VERSION WORDCRAFT_BUILD_DATE WORDCRAFT_BUILD_SHA FIGCRAFT_VERSION FIGCRAFT_BUILD_DATE FIGCRAFT_BUILD_SHA"
           prepare: |
+            # Keep rustup/proxies outside the Cargo data cache.
+            unset CARGO_HOME CARGO_TARGET_DIR
             pkg install -y bash git curl pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib
             # aarch64-unknown-freebsd is a tier-3 Rust target: rustup publishes no toolchain
             # for it ("installer for platform not found"), so use FreeBSD's lang/rust package.
@@ -681,35 +687,58 @@ jobs:
             else
               curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
             fi
-          run: |
-            set -e
-            # Only rustup writes this; the lang/rust package installs into /usr/local/bin.
-            [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
-            git config --global --add safe.directory "*"
-            export CARGO_TARGET_DIR=/var/tmp/craft-target CARGO_BUILD_JOBS=4
-            if [ -n "$INPUT_VERSION" ]; then cargo xtask version set "$VERSION" || cargo run -q -p xtask -- version set "$VERSION"; fi
-            export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
-            if [ -f packaging/freebsd/package.sh ]; then
-              bash packaging/freebsd/package.sh
-            else
-              cargo build --release --locked -p ${{ inputs.app-name }} $(cargo metadata --format-version 1 --no-deps | grep -q '"${{ inputs.app-name }}-cli"' && echo "-p ${{ inputs.app-name }}-cli" || true)
-              name="${{ inputs.app-name }}-$VERSION-freebsd-${{ matrix.arch }}"
-              mkdir -p "dist/release/$name"
-              cp target/release/${{ inputs.app-name }} "dist/release/$name/" 2>/dev/null || cp /var/tmp/craft-target/release/${{ inputs.app-name }} "dist/release/$name/"
-              if [ -f target/release/${{ inputs.app-name }}-cli ]; then
-                cp target/release/${{ inputs.app-name }}-cli "dist/release/$name/"
-              elif [ -f /var/tmp/craft-target/release/${{ inputs.app-name }}-cli ]; then
-                cp /var/tmp/craft-target/release/${{ inputs.app-name }}-cli "dist/release/$name/"
-              fi
-              cp README.md LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "dist/release/$name/" 2>/dev/null || true
-              if [ -f packaging/linux/ai.storyteller.${{ inputs.app-name }}.desktop ]; then
-                cp packaging/linux/ai.storyteller.${{ inputs.app-name }}.desktop "dist/release/$name/"
-              fi
-              mkdir -p "dist/release/$name/icons"
-              cp -R assets/app-icon/hicolor "dist/release/$name/icons/" 2>/dev/null || true
-              tar -C dist/release -czf "dist/release/$name.tar.gz" "$name"
-              rm -rf "dist/release/$name" /var/tmp/craft-target target
+      - name: Restore FreeBSD release Cargo cache
+        id: cargo-cache
+        uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
+        with:
+          profile: release
+          configuration: ${{ toJSON(inputs) }}
+          source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/release.yml') }}
+      - name: Build and package
+        shell: freebsd {0}
+        run: |
+          set -e
+          # Only rustup writes this; the lang/rust package installs into /usr/local/bin.
+          [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
+          git config --global --add safe.directory "*"
+          if [ -n "$INPUT_VERSION" ]; then cargo xtask version set "$VERSION" || cargo run -q -p xtask -- version set "$VERSION"; fi
+          export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
+          if [ -f packaging/freebsd/package.sh ]; then
+            bash packaging/freebsd/package.sh
+          else
+            cargo build --release --locked -p ${{ inputs.app-name }} $(cargo metadata --format-version 1 --no-deps | grep -q '"${{ inputs.app-name }}-cli"' && echo "-p ${{ inputs.app-name }}-cli" || true)
+            name="${{ inputs.app-name }}-$VERSION-freebsd-${{ matrix.arch }}"
+            mkdir -p "dist/release/$name"
+            cp target/release/${{ inputs.app-name }} "dist/release/$name/" 2>/dev/null || cp /var/tmp/craft-target/release/${{ inputs.app-name }} "dist/release/$name/"
+            if [ -f target/release/${{ inputs.app-name }}-cli ]; then
+              cp target/release/${{ inputs.app-name }}-cli "dist/release/$name/"
+            elif [ -f /var/tmp/craft-target/release/${{ inputs.app-name }}-cli ]; then
+              cp /var/tmp/craft-target/release/${{ inputs.app-name }}-cli "dist/release/$name/"
             fi
+            cp README.md LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "dist/release/$name/" 2>/dev/null || true
+            if [ -f packaging/linux/ai.storyteller.${{ inputs.app-name }}.desktop ]; then
+              cp packaging/linux/ai.storyteller.${{ inputs.app-name }}.desktop "dist/release/$name/"
+            fi
+            mkdir -p "dist/release/$name/icons"
+            cp -R assets/app-icon/hicolor "dist/release/$name/icons/" 2>/dev/null || true
+            tar -C dist/release -czf "dist/release/$name.tar.gz" "$name"
+            rm -rf "dist/release/$name"
+          fi
+      - name: Save FreeBSD release Cargo cache
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
+        with:
+          phase: save
+          profile: release
+          configuration: ${{ toJSON(inputs) }}
+          source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/release.yml') }}
+          key: ${{ steps.cargo-cache.outputs.key }}
+      - name: Copy release archives from the VM
+        run: |
+          mkdir -p dist/release
+          rsync -a --timeout=1800 --rsync-path='env PATH=/usr/local/bin:/usr/bin:/bin rsync' \
+            -e 'ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o ConnectTimeout=120' \
+            "freebsd:$GITHUB_WORKSPACE/dist/release/" dist/release/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-freebsd-${{ matrix.arch }}

@@ -6,6 +6,8 @@ Requires PyYAML (python3-yaml on the hosted Ubuntu runner).
 """
 
 import os
+import json
+from types import SimpleNamespace
 from pathlib import Path
 import re
 import subprocess
@@ -18,7 +20,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = Path(os.environ.get("FREEBSD_WORKFLOW", ROOT / ".github/workflows/freebsd.yml"))
 DATA = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-TEMPLATE = next(step["with"]["run"] for step in DATA["jobs"]["freebsd"]["steps"] if "with" in step and "run" in step["with"])
+STEPS = DATA["jobs"]["freebsd"]["steps"]
+BUILD_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Build and test")
+PACKAGE_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Build and validate the FreeBSD package")
+TEMPLATE = BUILD_TEMPLATE + "\nif [ '${{ inputs.run-package-check }}' = true ]; then\n" + PACKAGE_TEMPLATE + "\nfi\n"
 
 
 class FreeBSDRunTests(unittest.TestCase):
@@ -187,7 +192,17 @@ fi
     def test_matrix_defined_in_workflow(self):
         matrix = DATA["jobs"]["freebsd"].get("strategy", {}).get("matrix", {})
         self.assertIn("arch", matrix)
-        self.assertEqual(matrix["arch"], ["x86_64", "aarch64"])
+        expression = matrix["arch"].removeprefix("${{").removesuffix("}}").strip()
+        expression = expression.replace("&&", "and").replace("||", "or")
+        for event in ("pull_request", "pull_request_target", "push", "schedule", "workflow_dispatch"):
+            for override in ("", '["aarch64"]', '["x86_64","aarch64"]'):
+                with self.subTest(event=event, override=override):
+                    result = eval(expression, {"__builtins__": {}}, {
+                        "fromJSON": json.loads, "inputs": SimpleNamespace(architectures=override),
+                        "github": SimpleNamespace(event_name=event),
+                    })
+                    expected = json.loads(override) if override else (["x86_64"] if event.startswith("pull_request") else ["x86_64", "aarch64"])
+                    self.assertEqual(result, expected)
 
     def test_packaging_works_for_all_matrix_architectures(self):
         for arch in ("x86_64", "aarch64"):
@@ -206,7 +221,9 @@ fi
     def vm_steps(self):
         release = yaml.load((ROOT / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)
         for name, job in (("freebsd.yml", DATA["jobs"]["freebsd"]), ("release.yml", release["jobs"]["freebsd"])):
-            yield name, next(step["with"] for step in job["steps"] if "with" in step and "prepare" in step["with"])
+            vm = dict(next(step["with"] for step in job["steps"] if "with" in step and "prepare" in step["with"]))
+            vm["run"] = next(step["run"] for step in job["steps"] if step.get("shell") == "freebsd {0}")
+            yield name, vm
 
     def test_aarch64_installs_rust_from_packages_and_x86_64_uses_rustup(self):
         # rustup has no aarch64-unknown-freebsd toolchain: the VM must not ask it for one.

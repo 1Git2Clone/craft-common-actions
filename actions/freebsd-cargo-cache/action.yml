@@ -1,0 +1,124 @@
+name: FreeBSD Cargo cache
+description: Cache Cargo data across the host/guest boundary after the FreeBSD VM starts
+inputs:
+  phase:
+    description: restore, package (checkpoint debug and load release), or save
+    default: restore
+  profile:
+    description: Initial Cargo profile directory (debug or release)
+    default: debug
+  configuration:
+    description: Serialized caller inputs affecting the build
+    required: true
+  source-hash:
+    description: Hash of manifests, lockfiles, Cargo config and build scripts
+    required: true
+  key:
+    description: Primary key returned by the restore invocation (package/save)
+    default: ""
+outputs:
+  key:
+    description: Primary cache key for the subsequent save invocation
+    value: ${{ steps.identity.outputs.key }}
+  cache-hit:
+    description: Whether this exact revision already has a cache
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Identify the guest toolchain and build configuration
+      if: inputs.phase == 'restore'
+      id: identity
+      shell: bash
+      env:
+        CACHE_CONFIGURATION: ${{ inputs.configuration }}
+        CACHE_SOURCE_HASH: ${{ inputs.source-hash }}
+        CACHE_PROFILE: ${{ inputs.profile }}
+      run: |
+        set -euo pipefail
+        # Read the actual guest, including native-library versions. Host Rust and
+        # runner.os do not describe the compiler/ABI used for these artifacts.
+        guest=$(ssh freebsd 'sh -eu' <<'GUEST'
+        [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
+        # Honor the application's rust-toolchain override, just as the build does.
+        cd "$GITHUB_WORKSPACE"
+        rustc -vV
+        freebsd-version -ku
+        uname -m
+        pkg info -qa | sort
+        GUEST
+        )
+        fingerprint=$(printf '%s\n' "$guest" "$CACHE_CONFIGURATION" "$CACHE_SOURCE_HASH" "$CACHE_PROFILE" | sha256sum | cut -d ' ' -f 1)
+        prefix="freebsd-cargo-v1-$fingerprint-"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "key=$prefix$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+    - name: Restore guest Cargo data on the host
+      if: inputs.phase == 'restore'
+      id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ~/.cache/craft-freebsd-cargo
+        key: ${{ steps.identity.outputs.key }}
+        restore-keys: ${{ steps.identity.outputs.prefix }}
+    - name: Transfer Cargo data across the VM boundary
+      shell: bash
+      env:
+        CACHE_PHASE: ${{ inputs.phase }}
+        CACHE_PROFILE: ${{ inputs.profile }}
+        # PRs may restore their base branch's cache, but never write it.
+        CACHE_CAN_SAVE: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' }}
+      run: |
+        set -euo pipefail
+        # The VM shell rsyncs all of ~/work, including RUNNER_TEMP. Keep the
+        # host archive outside that tree to avoid a second copy inside the VM.
+        cache="$HOME/.cache/craft-freebsd-cargo"
+        case "$CACHE_PROFILE" in debug|release) ;; *) echo 'invalid cache profile' >&2; exit 1 ;; esac
+        ssh_args='ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o ConnectTimeout=120'
+        remote_rsync='env PATH=/usr/local/bin:/usr/bin:/bin rsync'
+        push() {
+          mkdir -p "$cache/$1"
+          rsync -a --delete --timeout=1800 -e "$ssh_args" --rsync-path="$remote_rsync" \
+            "$cache/$1/" "freebsd:$2/"
+        }
+        pull() {
+          mkdir -p "$cache/$1"
+          rsync -a --delete --exclude incremental --timeout=1800 -e "$ssh_args" --rsync-path="$remote_rsync" \
+            "freebsd:$2/" "$cache/$1/"
+        }
+        case "$CACHE_PHASE" in
+          restore)
+            ssh freebsd 'mkdir -p /var/tmp/craft-cargo/registry /var/tmp/craft-cargo/git /var/tmp/craft-target/debug /var/tmp/craft-target/release'
+            push registry /var/tmp/craft-cargo/registry
+            push git /var/tmp/craft-cargo/git
+            # Do not load both profiles into the space-constrained VM at once.
+            push "target/$CACHE_PROFILE" "/var/tmp/craft-target/$CACHE_PROFILE"
+            ;;
+          package)
+            if [ "$CACHE_CAN_SAVE" = true ]; then
+              pull target/debug /var/tmp/craft-target/debug
+            fi
+            ssh freebsd 'rm -rf /var/tmp/craft-target/debug; mkdir -p /var/tmp/craft-target/release'
+            push target/release /var/tmp/craft-target/release
+            ;;
+          save)
+            if [ "$CACHE_CAN_SAVE" != true ]; then exit 0; fi
+            # Never copy all of CARGO_HOME: credentials/config and toolchains are
+            # excluded. Keep the debug checkpoint when packaging removed it.
+            pull registry /var/tmp/craft-cargo/registry
+            pull git /var/tmp/craft-cargo/git
+            for profile in debug release; do
+              # profile is one of the two literal directory names above.
+              # shellcheck disable=SC2029
+              if ssh freebsd "test -d /var/tmp/craft-target/$profile"; then
+                pull "target/$profile" "/var/tmp/craft-target/$profile"
+              fi
+            done
+            ;;
+          *) echo 'invalid cache phase' >&2; exit 1 ;;
+        esac
+    - name: Save guest Cargo data from the host
+      if: inputs.phase == 'save' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ~/.cache/craft-freebsd-cargo
+        key: ${{ inputs.key }}
