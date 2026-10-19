@@ -223,6 +223,9 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         self.assertEqual((self.cache / "target/debug/build/dependency/incremental/lib.rs").read_text(), "keep")
 
     def test_untouched_empty_guest_profile_preserves_host_artifacts(self):
+        # Model ext4's nonzero empty-directory size even on APFS (which reports 0).
+        real_du = shutil.which("du")
+        self.tool("du", f"import subprocess, sys\nfrom pathlib import Path\np = Path(sys.argv[-1])\nif p.is_dir() and not any(p.iterdir()):\n    print('4\\t' + str(p))\nelse:\n    sys.exit(subprocess.run([{real_du!r}, *sys.argv[1:]]).returncode)\n")
         self.write(self.cache, "target/release/app", "cached-release")
         self.transfer("restore")
         self.assertFalse(any((self.guest / "var/tmp/craft-target/release").iterdir()))
