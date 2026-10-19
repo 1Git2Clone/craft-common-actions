@@ -197,6 +197,7 @@ class WorkflowCacheIntegrationTests(unittest.TestCase):
                 self.assertLess(steps.index(restore), steps.index(build))
                 self.assertLess(steps.index(build), steps.index(save))
                 self.assertNotIn("always()", save["if"])
+                self.assertEqual(save.get("continue-on-error"), "true")
                 self.assertIn("pull_request", save["if"])
                 self.assertIn("toJSON(inputs)", restore["with"]["configuration"])
                 if filename == "release.yml":

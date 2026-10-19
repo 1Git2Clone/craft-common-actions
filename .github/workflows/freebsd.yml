@@ -161,6 +161,7 @@ jobs:
           done
       - name: Save FreeBSD Cargo cache
         if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
           phase: save

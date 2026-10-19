@@ -169,8 +169,9 @@ invalidation. The test and release workflows use separate profile namespaces.
 Cache data is restored on the host and explicitly transferred to the guest's
 `/var/tmp/craft-cargo` and `/var/tmp/craft-target`. Only registry/git data and
 `debug`/`release` artifacts are saved, excluding incremental state, Cargo
-credentials/config and Rust toolchains. Successful non-PR runs save caches; PRs
-only restore. GitHub's normal repository and branch cache access rules apply.
+credentials/config and Rust toolchains. Successful non-PR runs save caches on a best-effort basis; PRs
+only restore. A cache-save failure remains visible as a warning and does not
+block delivery of already-built release artifacts. GitHub's normal repository and branch cache access rules apply.
 The VM's base image cache is separate from this Cargo cache.
 
 For package checks, debug artifacts are checkpointed on the host before freeing
