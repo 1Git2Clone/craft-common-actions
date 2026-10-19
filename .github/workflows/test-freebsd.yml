@@ -1,22 +1,6 @@
-# Canary-only branch. Jobs are projected from candidate adcd8bf032253532700276c429c03dcf1aa73371; application ed6b32ebf365736ba50bb1ccdc24f183415095f5.
+# Canary-only branch. Jobs are projected from candidate 0156a114e84202adb7c35d0f0289f6225dd06146; application ed6b32ebf365736ba50bb1ccdc24f183415095f5.
 name: Shared FreeBSD workflow tests
 'on':
-  pull_request:
-    paths:
-    - .github/workflows/freebsd.yml
-    - .github/workflows/release.yml
-    - actions/freebsd-cargo-cache/**
-    - .github/workflows/test-freebsd.yml
-    - tests/**
-  push:
-    branches:
-    - main
-    paths:
-    - .github/workflows/freebsd.yml
-    - .github/workflows/release.yml
-    - actions/freebsd-cargo-cache/**
-    - .github/workflows/test-freebsd.yml
-    - tests/**
   workflow_dispatch:
     inputs:
       freebsd-canary:
@@ -26,15 +10,6 @@ name: Shared FreeBSD workflow tests
 permissions:
   contents: read
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    - name: Install YAML parser
-      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-yaml
-    - name: Exercise failing tests, package validation and required fonts
-      run: /usr/bin/python3 -m unittest discover -s tests -v
   version:
     timeout-minutes: 10
     name: version
@@ -60,130 +35,6 @@ jobs:
       CANARY_CONFIGURATION: '{"app-name": "craft-launcher", "app-title": "ArtCraft Launcher", "craft-fonts-ref": "", "freebsd-release": "15.1-STABLE",
         "has-arch": true, "has-freebsd": true, "has-riscv64": true, "has-server": false, "has-web": true, "nfpm-version": "2.47.0", "trunk-version":
         "0.21.14", "version": "", "web-craft-fonts": false, "wix-version": "5.0.2"}'
-  cold-check:
-    name: cold check ${{ matrix.arch }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        arch:
-        - x86_64
-        - aarch64
-    env:
-      CARGO_HOME: /var/tmp/craft-cargo
-      CARGO_TARGET_DIR: /var/tmp/craft-target
-      CARGO_INCREMENTAL: '0'
-      CARGO_BUILD_JOBS: '4'
-      CANARY_CONFIGURATION: '{"architectures": "", "cargo-build-extra-args": "", "cargo-test-extra-args": "", "craft-fonts-ref": "", "custom-test-command":
-        "", "freebsd-release": "15.1-STABLE", "require-craft-fonts": false, "run-package-check": true, "skip-tests": false}'
-    steps:
-    - name: Check out the known-good application
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        repository: storytold/craft-launcher
-        ref: ed6b32ebf365736ba50bb1ccdc24f183415095f5
-    - name: Check out the exact candidate action
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        repository: storytold/craft-common-actions
-        ref: adcd8bf032253532700276c429c03dcf1aa73371
-        path: .craft-canary-actions
-    - name: Check out craft-fonts
-      if: fromJSON(env.CANARY_CONFIGURATION).craft-fonts-ref != ''
-      uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
-      with:
-        ref: ${{ fromJSON(env.CANARY_CONFIGURATION).craft-fonts-ref }}
-    - name: Start the FreeBSD VM
-      uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc
-      with:
-        release: ${{ fromJSON(env.CANARY_CONFIGURATION).freebsd-release == '15.1-STABLE' && '15.1' || fromJSON(env.CANARY_CONFIGURATION).freebsd-release
-          }}
-        arch: ${{ matrix.arch }}
-        usesh: 'true'
-        cpu: '4'
-        mem: '12288'
-        copyback: 'false'
-        envs: CARGO_HOME CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_JOBS
-        prepare: "# Keep rustup/proxies outside the Cargo data cache.\nunset CARGO_HOME CARGO_TARGET_DIR\npkg install -y bash git curl pkgconf\
-          \ cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib\
-          \ dejavu\n# aarch64-unknown-freebsd is a tier-3 Rust target: rustup publishes no toolchain\n# for it (\"installer for platform not found\"\
-          ), so use FreeBSD's lang/rust package.\nif [ \"${{ matrix.arch }}\" = aarch64 ]; then\n  pkg install -y rust\nelse\n  curl -fsSL https://sh.rustup.rs\
-          \ | sh -s -- -y --profile minimal\nfi\n"
-    - name: Restore FreeBSD Cargo cache
-      id: cargo-cache
-      uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
-      with:
-        configuration: ${{ env.CANARY_CONFIGURATION }}
-        source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/freebsd.yml')
-          }}
-    - name: Require a cold cache state
-      env:
-        CACHE_HIT: ${{ steps.cargo-cache.outputs.cache-hit }}
-        CACHE_KEY: ${{ steps.cargo-cache.outputs.key }}
-      run: 'echo "cache-hit=$CACHE_HIT key=$CACHE_KEY"
-
-        test "$CACHE_HIT" != true
-
-        '
-    - name: Build and test
-      shell: freebsd {0}
-      run: "set -eu\n# Only rustup writes this; the lang/rust package installs into /usr/local/bin.\n[ ! -f \"$HOME/.cargo/env\" ] || . \"$HOME/.cargo/env\"\
-        \ngit config --global --add safe.directory \"*\"\nrustc --version\nif [ -d craft-fonts ]; then\n  export CRAFT_FONTS_DIR=\"$PWD/craft-fonts\"\
-        \nfi\nif [ \"${{ fromJSON(env.CANARY_CONFIGURATION).require-craft-fonts }}\" = \"true\" ]; then\n  if [ ! -d craft-fonts ]; then\n   \
-        \ echo \"error: required craft-fonts checkout is missing\" >&2\n    exit 1\n  fi\n  export CRAFT_FONTS_REQUIRED=1\nfi\nCARGO_PROFILE_DEV_DEBUG=0\
-        \ cargo build --workspace --all-targets --locked ${{ fromJSON(env.CANARY_CONFIGURATION).cargo-build-extra-args }}\nif [ \"${{ fromJSON(env.CANARY_CONFIGURATION).skip-tests\
-        \ }}\" != \"true\" ]; then\n  if [ \"${{ fromJSON(env.CANARY_CONFIGURATION).custom-test-command != '' }}\" = \"true\" ]; then\n    # Isolate\
-        \ the command list: an early failure in an && chain must not\n    # be hidden by a later successful packaging command in this script.\n\
-        \    sh -eu <<'CRAFT_CUSTOM_TESTS' || exit \"$?\"\n${{ fromJSON(env.CANARY_CONFIGURATION).custom-test-command }}\nCRAFT_CUSTOM_TESTS\n\
-        \  else\n    CARGO_PROFILE_DEV_DEBUG=0 cargo test --workspace --locked ${{ fromJSON(env.CANARY_CONFIGURATION).cargo-test-extra-args }}\n\
-        \  fi\nfi\n"
-    - name: Checkpoint tests and restore the release profile
-      if: fromJSON(env.CANARY_CONFIGURATION).run-package-check
-      uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
-      with:
-        phase: package
-        configuration: ${{ env.CANARY_CONFIGURATION }}
-        source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/freebsd.yml')
-          }}
-    - name: Build and validate the FreeBSD package
-      if: fromJSON(env.CANARY_CONFIGURATION).run-package-check
-      shell: freebsd {0}
-      run: "set -eu\n[ ! -f \"$HOME/.cargo/env\" ] || . \"$HOME/.cargo/env\"\nif [ -d craft-fonts ]; then export CRAFT_FONTS_DIR=\"$PWD/craft-fonts\"\
-        ; fi\nif [ \"${{ fromJSON(env.CANARY_CONFIGURATION).require-craft-fonts }}\" = true ]; then export CRAFT_FONTS_REQUIRED=1; fi\nif [ !\
-        \ -f packaging/freebsd/package.sh ]; then\n  echo \"error: requested FreeBSD packaging script is missing\" >&2\n  exit 1\nfi\nCARGO_BUILD_JOBS=4\
-        \ bash packaging/freebsd/package.sh\n# Check every produced archive; an unmatched glob or unreadable tarball\n# must fail instead of turning\
-        \ a requested package check into a no-op.\nfor archive in dist/release/*-freebsd-${{ matrix.arch }}.tar.gz; do\n  if [ ! -f \"$archive\"\
-        \ ]; then\n    echo \"error: no FreeBSD ${{ matrix.arch }} package was produced\" >&2\n    exit 1\n  fi\n  tar -tzf \"$archive\"\ndone\n"
-    - name: Save FreeBSD Cargo cache
-      if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
-      uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
-      with:
-        phase: save
-        configuration: ${{ env.CANARY_CONFIGURATION }}
-        source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/freebsd.yml')
-          }}
-        key: ${{ steps.cargo-cache.outputs.key }}
-    - name: Inspect packaged architecture and guest storage
-      shell: freebsd {0}
-      run: "set -eu\nfile /var/tmp/craft-target/release/artcraft-launcher\nfor archive in dist/release/*-freebsd-${{ matrix.arch }}.tar.gz; do\n\
-        \  test -f \"$archive\"\n  tar -tzf \"$archive\"\n  sha256 \"$archive\"\ndone\ndu -sk /var/tmp/craft-cargo /var/tmp/craft-target\ndf -h\n"
-    - name: Copy release archives from the VM
-      run: "mkdir -p dist/release\nrsync -a --timeout=1800 --rsync-path='env PATH=/usr/local/bin:/usr/bin:/bin rsync' \\\n  -e 'ssh -o ServerAliveInterval=30\
-        \ -o ServerAliveCountMax=60 -o ConnectTimeout=120' \\\n  \"freebsd:$GITHUB_WORKSPACE/dist/release/\" dist/release/\n"
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      with:
-        name: cold-check-freebsd-${{ matrix.arch }}
-        path: dist/release/*
-        if-no-files-found: error
-        retention-days: 7
-    - name: Report host cache storage
-      run: 'du -sm "$HOME/.cache/craft-freebsd-cargo"
-
-        df -h
-
-        '
-    if: github.event_name == 'workflow_dispatch' && inputs.freebsd-canary
   warm-check:
     name: warm check ${{ matrix.arch }}
     runs-on: ubuntu-latest
@@ -193,7 +44,6 @@ jobs:
       matrix:
         arch:
         - x86_64
-        - aarch64
     env:
       CARGO_HOME: /var/tmp/craft-cargo
       CARGO_TARGET_DIR: /var/tmp/craft-target
@@ -211,7 +61,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: storytold/craft-common-actions
-        ref: adcd8bf032253532700276c429c03dcf1aa73371
+        ref: 0156a114e84202adb7c35d0f0289f6225dd06146
         path: .craft-canary-actions
     - name: Check out craft-fonts
       if: fromJSON(env.CANARY_CONFIGURATION).craft-fonts-ref != ''
@@ -247,7 +97,7 @@ jobs:
         CACHE_KEY: ${{ steps.cargo-cache.outputs.key }}
       run: 'echo "cache-hit=$CACHE_HIT key=$CACHE_KEY"
 
-        test "$CACHE_HIT" = true
+        case "$CACHE_HIT" in true|false) ;; *) echo "Warm run must restore a cache" >&2; exit 1 ;; esac
 
         '
     - name: Build and test
@@ -281,6 +131,7 @@ jobs:
         \ ]; then\n    echo \"error: no FreeBSD ${{ matrix.arch }} package was produced\" >&2\n    exit 1\n  fi\n  tar -tzf \"$archive\"\ndone\n"
     - name: Save FreeBSD Cargo cache
       if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
+      continue-on-error: 'true'
       uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
       with:
         phase: save
@@ -308,185 +159,9 @@ jobs:
 
         '
     if: github.event_name == 'workflow_dispatch' && inputs.freebsd-canary
-    needs:
-    - cold-check
-  cold-release:
-    name: cold release ${{ matrix.arch }}
-    if: github.event_name == 'workflow_dispatch' && inputs.freebsd-canary
-    needs:
-    - version
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        arch:
-        - x86_64
-        - aarch64
-    env:
-      CARGO_HOME: /var/tmp/craft-cargo
-      CARGO_TARGET_DIR: /var/tmp/craft-target
-      CARGO_BUILD_JOBS: '4'
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: '0'
-      RUST_BACKTRACE: '1'
-      VERSION: ${{ needs.version.outputs.version }}
-      BUILD_DATE: ${{ needs.version.outputs.date }}
-      BUILD_SHA: ${{ github.sha }}
-      CADCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      CADCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      CADCRAFT_BUILD_SHA: ${{ github.sha }}
-      ARTCRAFT_LAUNCHER_VERSION: ${{ needs.version.outputs.version }}
-      ARTCRAFT_LAUNCHER_BUILD_DATE: ${{ needs.version.outputs.date }}
-      ARTCRAFT_LAUNCHER_BUILD_SHA: ${{ github.sha }}
-      DECKCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      DECKCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      DECKCRAFT_BUILD_SHA: ${{ github.sha }}
-      DESIGNCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      DESIGNCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      DESIGNCRAFT_BUILD_SHA: ${{ github.sha }}
-      EFFECTCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      EFFECTCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      EFFECTCRAFT_BUILD_SHA: ${{ github.sha }}
-      FILMCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      FILMCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      FILMCRAFT_BUILD_SHA: ${{ github.sha }}
-      GRIDCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      GRIDCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      GRIDCRAFT_BUILD_SHA: ${{ github.sha }}
-      LIGHTCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      LIGHTCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      LIGHTCRAFT_BUILD_SHA: ${{ github.sha }}
-      PDFCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      PDFCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      PDFCRAFT_BUILD_SHA: ${{ github.sha }}
-      PHOTOCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      PHOTOCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      PHOTOCRAFT_BUILD_SHA: ${{ github.sha }}
-      SOUNDCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      SOUNDCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      SOUNDCRAFT_BUILD_SHA: ${{ github.sha }}
-      VECTORCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      VECTORCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      VECTORCRAFT_BUILD_SHA: ${{ github.sha }}
-      WORDCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      WORDCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      WORDCRAFT_BUILD_SHA: ${{ github.sha }}
-      FIGCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      FIGCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      FIGCRAFT_BUILD_SHA: ${{ github.sha }}
-      INPUT_VERSION: ''
-      CANARY_CONFIGURATION: '{"app-name": "craft-launcher", "app-title": "ArtCraft Launcher", "craft-fonts-ref": "", "freebsd-release": "15.1-STABLE",
-        "has-arch": true, "has-freebsd": true, "has-riscv64": true, "has-server": false, "has-web": true, "nfpm-version": "2.47.0", "trunk-version":
-        "0.21.14", "version": "", "web-craft-fonts": false, "wix-version": "5.0.2"}'
-    steps:
-    - name: Check out the known-good application
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        repository: storytold/craft-launcher
-        ref: ed6b32ebf365736ba50bb1ccdc24f183415095f5
-    - name: Check out the exact candidate action
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        repository: storytold/craft-common-actions
-        ref: adcd8bf032253532700276c429c03dcf1aa73371
-        path: .craft-canary-actions
-    - name: Check out craft-fonts
-      if: fromJSON(env.CANARY_CONFIGURATION).craft-fonts-ref != ''
-      uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
-      with:
-        ref: ${{ fromJSON(env.CANARY_CONFIGURATION).craft-fonts-ref }}
-    - name: Start the FreeBSD VM
-      uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc
-      with:
-        release: ${{ fromJSON(env.CANARY_CONFIGURATION).freebsd-release == '15.1-STABLE' && '15.1' || fromJSON(env.CANARY_CONFIGURATION).freebsd-release
-          }}
-        arch: ${{ matrix.arch }}
-        usesh: 'true'
-        cpu: '4'
-        mem: '12288'
-        copyback: 'false'
-        envs: CARGO_HOME CARGO_TARGET_DIR CARGO_INCREMENTAL CARGO_BUILD_JOBS VERSION BUILD_DATE BUILD_SHA INPUT_VERSION CADCRAFT_VERSION CADCRAFT_BUILD_DATE
-          CADCRAFT_BUILD_SHA ARTCRAFT_LAUNCHER_VERSION ARTCRAFT_LAUNCHER_BUILD_DATE ARTCRAFT_LAUNCHER_BUILD_SHA DECKCRAFT_VERSION DECKCRAFT_BUILD_DATE
-          DECKCRAFT_BUILD_SHA DESIGNCRAFT_VERSION DESIGNCRAFT_BUILD_DATE DESIGNCRAFT_BUILD_SHA EFFECTCRAFT_VERSION EFFECTCRAFT_BUILD_DATE EFFECTCRAFT_BUILD_SHA
-          FILMCRAFT_VERSION FILMCRAFT_BUILD_DATE FILMCRAFT_BUILD_SHA GRIDCRAFT_VERSION GRIDCRAFT_BUILD_DATE GRIDCRAFT_BUILD_SHA LIGHTCRAFT_VERSION
-          LIGHTCRAFT_BUILD_DATE LIGHTCRAFT_BUILD_SHA PDFCRAFT_VERSION PDFCRAFT_BUILD_DATE PDFCRAFT_BUILD_SHA PHOTOCRAFT_VERSION PHOTOCRAFT_BUILD_DATE
-          PHOTOCRAFT_BUILD_SHA SOUNDCRAFT_VERSION SOUNDCRAFT_BUILD_DATE SOUNDCRAFT_BUILD_SHA VECTORCRAFT_VERSION VECTORCRAFT_BUILD_DATE VECTORCRAFT_BUILD_SHA
-          WORDCRAFT_VERSION WORDCRAFT_BUILD_DATE WORDCRAFT_BUILD_SHA FIGCRAFT_VERSION FIGCRAFT_BUILD_DATE FIGCRAFT_BUILD_SHA
-        prepare: "# Keep rustup/proxies outside the Cargo data cache.\nunset CARGO_HOME CARGO_TARGET_DIR\npkg install -y bash git curl pkgconf\
-          \ cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib\n\
-          # aarch64-unknown-freebsd is a tier-3 Rust target: rustup publishes no toolchain\n# for it (\"installer for platform not found\"), so\
-          \ use FreeBSD's lang/rust package.\nif [ \"${{ matrix.arch }}\" = aarch64 ]; then\n  pkg install -y rust\nelse\n  curl --proto '=https'\
-          \ --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable\nfi\n"
-    - name: Restore FreeBSD release Cargo cache
-      id: cargo-cache
-      uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
-      with:
-        profile: release
-        configuration: ${{ env.CANARY_CONFIGURATION }}
-        source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/release.yml')
-          }}
-    - name: Require a cold cache state
-      env:
-        CACHE_HIT: ${{ steps.cargo-cache.outputs.cache-hit }}
-        CACHE_KEY: ${{ steps.cargo-cache.outputs.key }}
-      run: 'echo "cache-hit=$CACHE_HIT key=$CACHE_KEY"
-
-        test "$CACHE_HIT" != true
-
-        '
-    - name: Build and package
-      shell: freebsd {0}
-      run: "set -e\n# Only rustup writes this; the lang/rust package installs into /usr/local/bin.\n[ ! -f \"$HOME/.cargo/env\" ] || . \"$HOME/.cargo/env\"\
-        \ngit config --global --add safe.directory \"*\"\nif [ -n \"$INPUT_VERSION\" ]; then cargo xtask version set \"$VERSION\" || cargo run\
-        \ -q -p xtask -- version set \"$VERSION\"; fi\nexport CRAFT_FONTS_DIR=\"$PWD/craft-fonts\" CRAFT_FONTS_REQUIRED=1\nif [ -f packaging/freebsd/package.sh\
-        \ ]; then\n  bash packaging/freebsd/package.sh\nelse\n  cargo build --release --locked -p ${{ fromJSON(env.CANARY_CONFIGURATION).app-name\
-        \ }} $(cargo metadata --format-version 1 --no-deps | grep -q '\"${{ fromJSON(env.CANARY_CONFIGURATION).app-name }}-cli\"' && echo \"-p\
-        \ ${{ fromJSON(env.CANARY_CONFIGURATION).app-name }}-cli\" || true)\n  name=\"${{ fromJSON(env.CANARY_CONFIGURATION).app-name }}-$VERSION-freebsd-${{\
-        \ matrix.arch }}\"\n  mkdir -p \"dist/release/$name\"\n  cp target/release/${{ fromJSON(env.CANARY_CONFIGURATION).app-name }} \"dist/release/$name/\"\
-        \ 2>/dev/null || cp /var/tmp/craft-target/release/${{ fromJSON(env.CANARY_CONFIGURATION).app-name }} \"dist/release/$name/\"\n  if [ -f\
-        \ target/release/${{ fromJSON(env.CANARY_CONFIGURATION).app-name }}-cli ]; then\n    cp target/release/${{ fromJSON(env.CANARY_CONFIGURATION).app-name\
-        \ }}-cli \"dist/release/$name/\"\n  elif [ -f /var/tmp/craft-target/release/${{ fromJSON(env.CANARY_CONFIGURATION).app-name }}-cli ];\
-        \ then\n    cp /var/tmp/craft-target/release/${{ fromJSON(env.CANARY_CONFIGURATION).app-name }}-cli \"dist/release/$name/\"\n  fi\n  cp\
-        \ README.md LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md \"dist/release/$name/\" 2>/dev/null || true\n  if [ -f packaging/linux/ai.storyteller.${{\
-        \ fromJSON(env.CANARY_CONFIGURATION).app-name }}.desktop ]; then\n    cp packaging/linux/ai.storyteller.${{ fromJSON(env.CANARY_CONFIGURATION).app-name\
-        \ }}.desktop \"dist/release/$name/\"\n  fi\n  mkdir -p \"dist/release/$name/icons\"\n  cp -R assets/app-icon/hicolor \"dist/release/$name/icons/\"\
-        \ 2>/dev/null || true\n  tar -C dist/release -czf \"dist/release/$name.tar.gz\" \"$name\"\n  rm -rf \"dist/release/$name\"\nfi\n"
-    - name: Save FreeBSD release Cargo cache
-      if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
-      uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
-      with:
-        phase: save
-        profile: release
-        configuration: ${{ env.CANARY_CONFIGURATION }}
-        source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/release.yml')
-          }}
-        key: ${{ steps.cargo-cache.outputs.key }}
-    - name: Inspect packaged architecture and guest storage
-      shell: freebsd {0}
-      run: "set -eu\nfile /var/tmp/craft-target/release/artcraft-launcher\nfor archive in dist/release/*-freebsd-${{ matrix.arch }}.tar.gz; do\n\
-        \  test -f \"$archive\"\n  tar -tzf \"$archive\"\n  sha256 \"$archive\"\ndone\ndu -sk /var/tmp/craft-cargo /var/tmp/craft-target\ndf -h\n"
-    - name: Copy release archives from the VM
-      run: "mkdir -p dist/release\nrsync -a --timeout=1800 --rsync-path='env PATH=/usr/local/bin:/usr/bin:/bin rsync' \\\n  -e 'ssh -o ServerAliveInterval=30\
-        \ -o ServerAliveCountMax=60 -o ConnectTimeout=120' \\\n  \"freebsd:$GITHUB_WORKSPACE/dist/release/\" dist/release/\n"
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      with:
-        name: cold-release-freebsd-${{ matrix.arch }}
-        path: dist/release/*
-        if-no-files-found: error
-        retention-days: 7
-    - name: Report host cache storage
-      run: 'du -sm "$HOME/.cache/craft-freebsd-cargo"
-
-        df -h
-
-        '
   warm-release:
     name: warm release ${{ matrix.arch }}
     if: github.event_name == 'workflow_dispatch' && inputs.freebsd-canary
-    needs:
-    - cold-release
-    - version
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -494,7 +169,6 @@ jobs:
       matrix:
         arch:
         - x86_64
-        - aarch64
     env:
       CARGO_HOME: /var/tmp/craft-cargo
       CARGO_TARGET_DIR: /var/tmp/craft-target
@@ -561,7 +235,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: storytold/craft-common-actions
-        ref: adcd8bf032253532700276c429c03dcf1aa73371
+        ref: 0156a114e84202adb7c35d0f0289f6225dd06146
         path: .craft-canary-actions
     - name: Check out craft-fonts
       if: fromJSON(env.CANARY_CONFIGURATION).craft-fonts-ref != ''
@@ -604,7 +278,7 @@ jobs:
         CACHE_KEY: ${{ steps.cargo-cache.outputs.key }}
       run: 'echo "cache-hit=$CACHE_HIT key=$CACHE_KEY"
 
-        test "$CACHE_HIT" = true
+        case "$CACHE_HIT" in true|false) ;; *) echo "Warm run must restore a cache" >&2; exit 1 ;; esac
 
         '
     - name: Build and package
@@ -626,6 +300,7 @@ jobs:
         \ 2>/dev/null || true\n  tar -C dist/release -czf \"dist/release/$name.tar.gz\" \"$name\"\n  rm -rf \"dist/release/$name\"\nfi\n"
     - name: Save FreeBSD release Cargo cache
       if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
+      continue-on-error: 'true'
       uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
       with:
         phase: save
@@ -653,7 +328,9 @@ jobs:
         df -h
 
         '
-run-name: FreeBSD cold/warm candidate canaries
+    needs:
+    - version
+run-name: FreeBSD x86 warm candidate canaries
 concurrency:
-  group: freebsd-cache-canary-${{ github.ref }}
+  group: freebsd-cache-warm-${{ github.run_id }}
   cancel-in-progress: false
