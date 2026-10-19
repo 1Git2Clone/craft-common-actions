@@ -131,7 +131,7 @@ jobs:
         \ ]; then\n    echo \"error: no FreeBSD ${{ matrix.arch }} package was produced\" >&2\n    exit 1\n  fi\n  tar -tzf \"$archive\"\ndone\n"
     - name: Save FreeBSD Cargo cache
       if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
-      continue-on-error: 'true'
+      continue-on-error: true
       uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
       with:
         phase: save
@@ -300,7 +300,7 @@ jobs:
         \ 2>/dev/null || true\n  tar -C dist/release -czf \"dist/release/$name.tar.gz\" \"$name\"\n  rm -rf \"dist/release/$name\"\nfi\n"
     - name: Save FreeBSD release Cargo cache
       if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
-      continue-on-error: 'true'
+      continue-on-error: true
       uses: ./.craft-canary-actions/actions/freebsd-cargo-cache
       with:
         phase: save
