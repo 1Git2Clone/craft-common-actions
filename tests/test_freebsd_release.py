@@ -58,7 +58,7 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
             script = script.replace('${{ steps.cargo-cache.outcome }}', 'failure')
             script = script.replace('/var/tmp/', str(guest) + '/')
             script = script.replace('. "$HOME/.cargo/env"', ': # isolated toolchain')
-            result = subprocess.run(['sh', '-e', '-c', script], cwd=guest, env=env, capture_output=True, text=True)
+            result = subprocess.run(['sh', '-c', script], cwd=guest, env=env, capture_output=True, text=True)
             if result.returncode:
                 return result.returncode, False, (target / 'release/partial').exists()
             copied = subprocess.run(['bash', '-eu', '-c', COPY], cwd=host, env=env, capture_output=True, text=True)

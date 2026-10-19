@@ -99,7 +99,9 @@ runs:
           local remote_size base_size
           # FreeBSD's SSH login shell may be csh. Run POSIX syntax in sh explicitly.
           # Both paths below are internal literals, never caller input.
-          remote_size=$(printf 'if [ -d "%s" ]; then du -sk "%s"; else echo 0; fi\n' "$2" "$2" | ssh freebsd 'sh -eu' | cut -f 1)
+          # Expand the emptiness probe in the guest, not on the host.
+          # shellcheck disable=SC2016
+          remote_size=$(printf 'if [ -d "%s" ] && [ -n "$(ls -A "%s")" ]; then du -sk "%s"; else echo 0; fi\n' "$2" "$2" "$2" | ssh freebsd 'sh -eu' | cut -f 1)
           [[ "$remote_size" =~ ^[0-9]+$ ]] || return 1
           # Cargo need not create git/registry if the workspace has no such deps.
           if [ "$remote_size" -eq 0 ]; then return 0; fi

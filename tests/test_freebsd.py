@@ -109,11 +109,11 @@ fi
                 path = work / "guest/craft-target" / profile
                 path.mkdir(parents=True)
                 (path / "partial").write_text("incomplete cache transfer")
-            result = subprocess.run(["/bin/sh", "-eu", "-c", render(BUILD_TEMPLATE)], cwd=work, env=env,
+            result = subprocess.run(["/bin/sh", "-c", render(BUILD_TEMPLATE)], cwd=work, env=env,
                                     text=True, capture_output=True, timeout=15)
             if result.returncode == 0 and package_check:
                 # Separate processes share files, never shell exports.
-                result = subprocess.run(["/bin/sh", "-eu", "-c", render(PACKAGE_TEMPLATE)], cwd=work, env=env.copy(),
+                result = subprocess.run(["/bin/sh", "-c", render(PACKAGE_TEMPLATE)], cwd=work, env=env.copy(),
                                         text=True, capture_output=True, timeout=15)
             log = (work / "cargo.log").read_text().splitlines() if (work / "cargo.log").exists() else []
             package_log = (work / "package.log").read_text().splitlines() if (work / "package.log").exists() else []

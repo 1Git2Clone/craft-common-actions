@@ -43,6 +43,7 @@ class CargoCacheTests(unittest.TestCase):
                         FIXTURE_ARCH="amd64", FIXTURE_PACKAGES="gtk3-1\nrust-1\n",
                         FIXTURE_FREEBSD="15.1-RELEASE")
         self.tool("ssh", """import os, subprocess, sys
+assert os.getcwd() == os.path.dirname(os.environ['FIXTURE_GUEST'])
 command = sys.argv[2].replace('/var/tmp/', os.environ['FIXTURE_GUEST'] + '/var/tmp/')
 login = os.environ.get('FIXTURE_LOGIN_SHELL', '/bin/sh')
 flags = ['-f'] if login.endswith('csh') else []
@@ -76,7 +77,7 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         path.chmod(0o755)
 
     def run_script(self, script, **env):
-        return subprocess.run(["bash", "-c", script], env=dict(self.env, **env),
+        return subprocess.run(["bash", "-c", script], cwd=self.root, env=dict(self.env, **env),
                               text=True, capture_output=True, timeout=20)
 
     def transfer(self, phase, **env):
@@ -220,6 +221,13 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
             self.assertEqual((self.cache / path).read_text(), "source")
         self.assertFalse((self.cache / "target/debug/incremental").exists())
         self.assertEqual((self.cache / "target/debug/build/dependency/incremental/lib.rs").read_text(), "keep")
+
+    def test_untouched_empty_guest_profile_preserves_host_artifacts(self):
+        self.write(self.cache, "target/release/app", "cached-release")
+        self.transfer("restore")
+        self.assertFalse(any((self.guest / "var/tmp/craft-target/release").iterdir()))
+        self.transfer("save")
+        self.assertEqual((self.cache / "target/release/app").read_text(), "cached-release")
 
     def test_transport_failure_is_visible(self):
         self.tool("rsync", "import sys\nsys.exit(23)\n")
