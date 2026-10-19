@@ -96,6 +96,7 @@ jobs:
             fi
       - name: Restore FreeBSD Cargo cache
         id: cargo-cache
+        continue-on-error: true
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
           configuration: ${{ toJSON(inputs) }}
@@ -106,6 +107,10 @@ jobs:
           set -eu
           # Only rustup writes this; the lang/rust package installs into /usr/local/bin.
           [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
+          # A failed restore may leave partial files. Rebuild from an empty cache.
+          if [ "${{ steps.cargo-cache.outcome }}" = failure ]; then
+            rm -rf /var/tmp/craft-target /var/tmp/craft-cargo/registry /var/tmp/craft-cargo/git
+          fi
           git config --global --add safe.directory "*"
           rustc --version
           if [ -d craft-fonts ]; then
@@ -131,6 +136,8 @@ jobs:
             fi
           fi
       - name: Checkpoint tests and restore the release profile
+        id: package-cache
+        continue-on-error: true
         if: inputs.run-package-check
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
@@ -143,6 +150,11 @@ jobs:
         run: |
           set -eu
           [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
+          # Required even if the optional cache checkpoint failed before cleanup.
+          rm -rf /var/tmp/craft-target/debug
+          if [ "${{ steps.package-cache.outcome }}" = failure ]; then
+            rm -rf /var/tmp/craft-target/release
+          fi
           if [ -d craft-fonts ]; then export CRAFT_FONTS_DIR="$PWD/craft-fonts"; fi
           if [ "${{ inputs.require-craft-fonts }}" = true ]; then export CRAFT_FONTS_REQUIRED=1; fi
           if [ ! -f packaging/freebsd/package.sh ]; then
@@ -160,7 +172,7 @@ jobs:
             tar -tzf "$archive"
           done
       - name: Save FreeBSD Cargo cache
-        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.cache-hit != 'true'
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.key != '' && steps.cargo-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:

@@ -49,7 +49,7 @@ runs:
         GUEST
         )
         fingerprint=$(printf '%s\n' "$guest" "$CACHE_CONFIGURATION" "$CACHE_SOURCE_HASH" "$CACHE_PROFILE" | sha256sum | cut -d ' ' -f 1)
-        prefix="freebsd-cargo-v1-$fingerprint-"
+        prefix="freebsd-cargo-v2-$fingerprint-"
         echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
         echo "key=$prefix$GITHUB_SHA" >> "$GITHUB_OUTPUT"
     - name: Restore guest Cargo data on the host
@@ -65,6 +65,8 @@ runs:
       env:
         CACHE_PHASE: ${{ inputs.phase }}
         CACHE_PROFILE: ${{ inputs.profile }}
+        # Bound the uncompressed payload before transferring or uploading it.
+        CACHE_MAX_KIB: "2097152"
         # PRs may restore their base branch's cache, but never write it.
         CACHE_CAN_SAVE: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' }}
       run: |
@@ -80,11 +82,45 @@ runs:
           rsync -a --delete --timeout=1800 -e "$ssh_args" --rsync-path="$remote_rsync" \
             "$cache/$1/" "freebsd:$2/"
         }
-        pull() {
-          mkdir -p "$cache/$1"
-          rsync -a --delete --exclude incremental --timeout=1800 -e "$ssh_args" --rsync-path="$remote_rsync" \
-            "freebsd:$2/" "$cache/$1/"
+        size_kib() {
+          if [ -d "$1" ]; then du -sk "$1" | cut -f 1; else echo 0; fi
         }
+        trim() {
+          # Prefer the release profile, which is needed after the test checkpoint.
+          for component in target/debug target/release registry git; do
+            if [ "$(size_kib "$cache")" -le "$CACHE_MAX_KIB" ]; then break; fi
+            echo "::notice::FreeBSD Cargo cache exceeds 2 GiB; dropping $component"
+            rm -rf "${cache:?}/$component"
+          done
+        }
+        pull() {
+          # Measure before rsync so an oversized workspace is never copied out.
+          # Include incremental in this conservative estimate; rsync omits it.
+          local remote_size
+          # $2 is a literal internal path, never caller input.
+          # shellcheck disable=SC2029
+          remote_size=$(ssh freebsd "du -sk '$2'" | cut -f 1)
+          [[ "$remote_size" =~ ^[0-9]+$ ]] || return 1
+          rm -rf "${cache:?}/$1"
+          if [ "$1" = target/release ] && [ $(( $(size_kib "$cache") + remote_size )) -gt "$CACHE_MAX_KIB" ]; then
+            rm -rf "${cache:?}/target/debug"
+          fi
+          if [ $(( $(size_kib "$cache") + remote_size )) -gt "$CACHE_MAX_KIB" ]; then
+            echo "::notice::Skipping $1: FreeBSD Cargo cache would exceed 2 GiB"
+            return 0
+          fi
+          mkdir -p "$cache/$1"
+          if rsync -a --delete --exclude incremental --timeout=1800 -e "$ssh_args" --rsync-path="$remote_rsync" \
+            "freebsd:$2/" "$cache/$1/"; then
+            return 0
+          else
+            local status=$?
+            rm -rf "${cache:?}/$1"
+            return "$status"
+          fi
+        }
+        mkdir -p "$cache"
+        trim
         case "$CACHE_PHASE" in
           restore)
             ssh freebsd 'mkdir -p /var/tmp/craft-cargo/registry /var/tmp/craft-cargo/git /var/tmp/craft-target/debug /var/tmp/craft-target/release'
@@ -113,6 +149,7 @@ runs:
                 pull "target/$profile" "/var/tmp/craft-target/$profile"
               fi
             done
+            trim
             ;;
           *) echo 'invalid cache phase' >&2; exit 1 ;;
         esac

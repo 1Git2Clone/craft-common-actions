@@ -35,7 +35,7 @@ class CargoCacheTests(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.tools) + os.pathsep + os.environ["PATH"],
                         HOME=str(self.root / "home"), RUNNER_TEMP=str(self.root / "host"),
                         FIXTURE_GUEST=str(self.guest), REAL_RSYNC=shutil.which("rsync"),
-                        CACHE_PHASE="restore", CACHE_PROFILE="debug", CACHE_CAN_SAVE="true",
+                        CACHE_PHASE="restore", CACHE_PROFILE="debug", CACHE_CAN_SAVE="true", CACHE_MAX_KIB="2097152",
                         CACHE_CONFIGURATION='{"features":"heif","fonts":"abc"}',
                         CACHE_SOURCE_HASH="lock-and-build-config", GITHUB_SHA="commit1",
                         GITHUB_WORKSPACE=str(self.root),
@@ -152,6 +152,36 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         self.assertIn("github.event_name != 'pull_request'", save["if"])
         self.assertIn("github.event_name != 'pull_request_target'", save["if"])
 
+    def test_oversized_profile_is_skipped_before_transfer(self):
+        self.transfer("restore")
+        self.write(self.guest, "var/tmp/craft-target/debug/large", "x" * 131072)
+        self.transfer("save", CACHE_MAX_KIB="64")
+        self.assertFalse((self.cache / "target/debug/large").exists())
+        self.assertLessEqual(int(subprocess.check_output(["du", "-sk", str(self.cache)]).split()[0]), 64)
+
+    def test_oversized_restored_cache_is_trimmed_before_guest_transfer(self):
+        self.write(self.cache, "target/debug/large", "x" * 131072)
+        self.write(self.cache, "registry/cache/small.crate", "source")
+        self.transfer("restore", CACHE_MAX_KIB="64")
+        self.assertFalse((self.guest / "var/tmp/craft-target/debug/large").exists())
+        self.assertTrue((self.guest / "var/tmp/craft-cargo/registry/cache/small.crate").exists())
+
+    def test_release_profile_replaces_debug_when_budget_is_full(self):
+        self.transfer("restore")
+        self.write(self.cache, "target/debug/large", "x" * 40000)
+        self.write(self.guest, "var/tmp/craft-target/release/large", "y" * 40000)
+        self.transfer("save", CACHE_MAX_KIB="64")
+        self.assertFalse((self.cache / "target/debug/large").exists())
+        self.assertTrue((self.cache / "target/release/large").exists())
+
+    def test_failed_export_discards_partial_host_profile(self):
+        self.transfer("restore")
+        self.write(self.guest, "var/tmp/craft-target/debug/deps/app", "built")
+        self.tool("rsync", "import pathlib, sys\np = pathlib.Path(sys.argv[-1])\np.mkdir(parents=True, exist_ok=True)\n(p / 'partial').write_text('incomplete')\nsys.exit(23)\n")
+        result = self.run_script(TRANSFER, CACHE_PHASE="package")
+        self.assertEqual(result.returncode, 23, result)
+        self.assertFalse((self.cache / "target/debug").exists())
+
     def test_transport_failure_is_visible(self):
         self.tool("rsync", "import sys\nsys.exit(23)\n")
         result = self.run_script(TRANSFER)
@@ -197,7 +227,10 @@ class WorkflowCacheIntegrationTests(unittest.TestCase):
                 self.assertLess(steps.index(restore), steps.index(build))
                 self.assertLess(steps.index(build), steps.index(save))
                 self.assertNotIn("always()", save["if"])
-                self.assertEqual(save.get("continue-on-error"), "true")
+                for cache_step in cache_steps:
+                    self.assertEqual(cache_step.get("continue-on-error"), "true")
+                self.assertIn("steps.cargo-cache.outputs.key != ''", save["if"])
+                self.assertIn("steps.cargo-cache.outcome", build["run"])
                 self.assertIn("pull_request", save["if"])
                 self.assertIn("toJSON(inputs)", restore["with"]["configuration"])
                 if filename == "release.yml":

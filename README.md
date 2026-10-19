@@ -153,7 +153,9 @@ The optional `architectures` input overrides the check matrix with a JSON array,
 for example `'["aarch64"]'` for a dedicated ARM check or
 `'["x86_64","aarch64"]'` for an explicit full check. Existing callers need no
 changes. A reusable workflow cannot install a schedule in its caller repository;
-add a caller `schedule` if nightly coverage is desired. Main/release pushes and
+add a caller `schedule` if nightly coverage is desired. If branch protection requires
+the ARM job by name, remove that required check when adopting the new PR default,
+or explicitly request both architectures until that policy is approved. Main/release pushes and
 manual runs keep their existing full coverage.
 
 Both this workflow and the FreeBSD jobs in `release.yml` cache Cargo registry/git
@@ -170,14 +172,21 @@ Cache data is restored on the host and explicitly transferred to the guest's
 `/var/tmp/craft-cargo` and `/var/tmp/craft-target`. Only registry/git data and
 `debug`/`release` artifacts are saved, excluding incremental state, Cargo
 credentials/config and Rust toolchains. Successful non-PR runs save caches on a best-effort basis; PRs
-only restore. A cache-save failure remains visible as a warning and does not
-block delivery of already-built release artifacts. GitHub's normal repository and branch cache access rules apply.
+only restore. Restore, checkpoint and save failures are non-blocking. A failed
+restore discards partial guest data before building; a failed checkpoint discards
+the partial release profile before packaging. Required build/package steps reclaim
+debug disk space independently of the optional checkpoint. GitHub's normal repository and branch cache access rules apply.
 The VM's base image cache is separate from this Cargo cache.
 
 For package checks, debug artifacts are checkpointed on the host before freeing
 guest disk space and loading the cached release profile. Release jobs keep their
 compiled target until the cache has been copied out, then copy only the release
 archives back for upload. Neither workflow copies the entire VM workspace back.
+Each Cargo cache payload is capped at **2 GiB uncompressed**, with guest sizes
+checked before export. Oversized components are omitted with a notice; release
+artifacts take priority over debug artifacts when both cannot fit. Restored caches
+are bounded too. This bounds each entry, not the repository's total: architectures,
+profiles and revisions still compete with other workflows under its cache quota.
 Cache storage and transfer time should be monitored against repository quotas;
 the first run is cold, and no fixed speed-up is assumed.
 
