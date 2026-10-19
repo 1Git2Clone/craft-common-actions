@@ -166,13 +166,16 @@ feature/test options), manifests, lockfiles, build scripts, Cargo configuration,
 toolchain files and packaging scripts also partition the cache. New commits may
 restore a compatible earlier commit; toolchain/configuration/lockfile changes
 start a new cache. Build metadata changes still go through Cargo's normal
-invalidation. The test and release workflows use separate profile namespaces.
+invalidation. The test and release workflows use separate profile namespaces. The workflow-file
+pattern fingerprints the caller's configuration; changes to the shared workflow
+that need a new namespace must bump the cache action's version prefix.
 
 Cache data is restored on the host and explicitly transferred to the guest's
 `/var/tmp/craft-cargo` and `/var/tmp/craft-target`. Only registry/git data and
 `debug`/`release` artifacts are saved, excluding incremental state, Cargo
 credentials/config and Rust toolchains. Successful non-PR runs save caches on a best-effort basis; PRs
-only restore. Restore, checkpoint and save failures are non-blocking. A failed
+only restore. Restore, checkpoint and save failures are non-blocking; each phase has a 10-minute
+time budget. A failed
 restore discards partial guest data before building; a failed checkpoint discards
 the partial release profile before packaging. Required build/package steps reclaim
 debug disk space independently of the optional checkpoint. GitHub's normal repository and branch cache access rules apply.
@@ -180,8 +183,8 @@ The VM's base image cache is separate from this Cargo cache.
 
 For package checks, debug artifacts are checkpointed on the host before freeing
 guest disk space and loading the cached release profile. Release jobs keep their
-compiled target until the cache has been copied out, then copy only the release
-archives back for upload. Neither workflow copies the entire VM workspace back.
+compiled target until the cache has been copied out, copy only the release
+archives back and upload them before attempting the optional cache save. Neither workflow copies the entire VM workspace back.
 Each Cargo cache payload is capped at **2 GiB uncompressed**, with guest sizes
 checked before export. Oversized components are omitted with a notice; release
 artifacts take priority over debug artifacts when both cannot fit. Restored caches

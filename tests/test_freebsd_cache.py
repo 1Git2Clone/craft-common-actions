@@ -44,7 +44,10 @@ class CargoCacheTests(unittest.TestCase):
                         FIXTURE_FREEBSD="15.1-RELEASE")
         self.tool("ssh", """import os, subprocess, sys
 command = sys.argv[2].replace('/var/tmp/', os.environ['FIXTURE_GUEST'] + '/var/tmp/')
-sys.exit(subprocess.run(command, shell=True).returncode)
+login = os.environ.get('FIXTURE_LOGIN_SHELL', '/bin/sh')
+flags = ['-f'] if login.endswith('csh') else []
+script = sys.stdin.read().replace('/var/tmp/', os.environ['FIXTURE_GUEST'] + '/var/tmp/') if command == 'sh -eu' else None
+sys.exit(subprocess.run([login, *flags, '-c', command], input=script, text=True).returncode)
 """)
         self.tool("rsync", """import os, subprocess, sys
 with open(os.path.join(os.environ["HOME"], "rsync.log"), "a") as log:
@@ -199,6 +202,25 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         self.assertEqual((self.cache / "target/release/app").read_text(), "previous-release")
         self.assertEqual((self.cache / "target/debug/app").read_text(), "previous-debug")
 
+    @unittest.skipUnless(shutil.which("csh") or shutil.which("tcsh"), "csh/tcsh required")
+    def test_csh_login_shell_supports_identity_checkpoint_and_save(self):
+        self.env["FIXTURE_LOGIN_SHELL"] = shutil.which("csh") or shutil.which("tcsh")
+        self.assertTrue(self.identity()["key"])
+        self.test_package_checkpoint_and_save_keep_both_profiles_without_credentials()
+
+    def test_incremental_dependency_sources_survive_but_profile_state_is_excluded(self):
+        self.transfer("restore")
+        paths = ("registry/src/crate/incremental/lib.rs", "git/checkouts/repo/incremental/lib.rs")
+        for path in paths:
+            self.write(self.guest, "var/tmp/craft-cargo/" + path, "source")
+        self.write(self.guest, "var/tmp/craft-target/debug/incremental/state", "discard")
+        self.write(self.guest, "var/tmp/craft-target/debug/build/dependency/incremental/lib.rs", "keep")
+        self.transfer("save")
+        for path in paths:
+            self.assertEqual((self.cache / path).read_text(), "source")
+        self.assertFalse((self.cache / "target/debug/incremental").exists())
+        self.assertEqual((self.cache / "target/debug/build/dependency/incremental/lib.rs").read_text(), "keep")
+
     def test_transport_failure_is_visible(self):
         self.tool("rsync", "import sys\nsys.exit(23)\n")
         result = self.run_script(TRANSFER)
@@ -246,6 +268,7 @@ class WorkflowCacheIntegrationTests(unittest.TestCase):
                 self.assertNotIn("always()", save["if"])
                 for cache_step in cache_steps:
                     self.assertEqual(cache_step.get("continue-on-error"), "true")
+                    self.assertEqual(cache_step.get("timeout-minutes"), "10")
                 self.assertIn("steps.cargo-cache.outputs.key != ''", save["if"])
                 self.assertIn("steps.cargo-cache.outcome", build["run"])
                 self.assertIn("pull_request", save["if"])
@@ -255,6 +278,9 @@ class WorkflowCacheIntegrationTests(unittest.TestCase):
                     self.assertEqual(restore["with"]["profile"], "release")
                     self.assertNotIn('rm -rf "dist/release/$name" /var/tmp/craft-target', build["run"])
                     self.assertLess(index("Build and package"), index("Copy release archives from the VM"))
+                    upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
+                    self.assertLess(index("Copy release archives from the VM"), steps.index(upload))
+                    self.assertLess(steps.index(upload), steps.index(save))
                     self.assertTrue(any(step.get("uses", "").startswith("actions/upload-artifact@") for step in steps))
 
 

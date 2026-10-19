@@ -97,6 +97,7 @@ jobs:
       - name: Restore FreeBSD Cargo cache
         id: cargo-cache
         continue-on-error: true
+        timeout-minutes: 10
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
           configuration: ${{ toJSON(inputs) }}
@@ -138,6 +139,7 @@ jobs:
       - name: Checkpoint tests and restore the release profile
         id: package-cache
         continue-on-error: true
+        timeout-minutes: 10
         if: inputs.run-package-check
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
@@ -174,6 +176,7 @@ jobs:
       - name: Save FreeBSD Cargo cache
         if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.key != '' && steps.cargo-cache.outputs.cache-hit != 'true'
         continue-on-error: true
+        timeout-minutes: 10
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
           phase: save

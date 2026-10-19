@@ -690,6 +690,7 @@ jobs:
       - name: Restore FreeBSD release Cargo cache
         id: cargo-cache
         continue-on-error: true
+        timeout-minutes: 10
         uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
         with:
           profile: release
@@ -698,7 +699,7 @@ jobs:
       - name: Build and package
         shell: freebsd {0}
         run: |
-          set -e
+          set -eu
           # Only rustup writes this; the lang/rust package installs into /usr/local/bin.
           [ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
           # A failed restore may leave partial files. Rebuild from an empty cache.
@@ -729,16 +730,6 @@ jobs:
             tar -C dist/release -czf "dist/release/$name.tar.gz" "$name"
             rm -rf "dist/release/$name"
           fi
-      - name: Save FreeBSD release Cargo cache
-        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.key != '' && steps.cargo-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
-        with:
-          phase: save
-          profile: release
-          configuration: ${{ toJSON(inputs) }}
-          source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/release.yml') }}
-          key: ${{ steps.cargo-cache.outputs.key }}
       - name: Copy release archives from the VM
         run: |
           mkdir -p dist/release
@@ -750,6 +741,18 @@ jobs:
           name: release-freebsd-${{ matrix.arch }}
           path: dist/release/*
           if-no-files-found: error
+      - name: Save FreeBSD release Cargo cache
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && steps.cargo-cache.outputs.key != '' && steps.cargo-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: storytold/craft-common-actions/actions/freebsd-cargo-cache@main
+        with:
+          phase: save
+          profile: release
+          configuration: ${{ toJSON(inputs) }}
+          source-hash: ${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'rust-toolchain*', 'packaging/**', '.github/workflows/release.yml') }}
+          key: ${{ steps.cargo-cache.outputs.key }}
+
 
   web:
     timeout-minutes: 90
