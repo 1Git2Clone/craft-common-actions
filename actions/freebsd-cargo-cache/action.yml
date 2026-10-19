@@ -96,19 +96,26 @@ runs:
         pull() {
           # Measure before rsync so an oversized workspace is never copied out.
           # Include incremental in this conservative estimate; rsync omits it.
-          local remote_size
+          local remote_size base_size
           # $2 is a literal internal path, never caller input.
           # shellcheck disable=SC2029
-          remote_size=$(ssh freebsd "du -sk '$2'" | cut -f 1)
+          remote_size=$(ssh freebsd "if [ -d '$2' ]; then du -sk '$2'; else echo 0; fi" | cut -f 1)
           [[ "$remote_size" =~ ^[0-9]+$ ]] || return 1
-          rm -rf "${cache:?}/$1"
-          if [ "$1" = target/release ] && [ $(( $(size_kib "$cache") + remote_size )) -gt "$CACHE_MAX_KIB" ]; then
-            rm -rf "${cache:?}/target/debug"
+          # Cargo need not create git/registry if the workspace has no such deps.
+          if [ "$remote_size" -eq 0 ]; then return 0; fi
+          base_size=$(( $(size_kib "$cache") - $(size_kib "$cache/$1") ))
+          if [ "$1" = target/release ] && [ $(( base_size + remote_size )) -gt "$CACHE_MAX_KIB" ]; then
+            # Drop debug only when doing so allows the new release profile to fit.
+            if [ $(( base_size - $(size_kib "$cache/target/debug") + remote_size )) -le "$CACHE_MAX_KIB" ]; then
+              base_size=$(( base_size - $(size_kib "$cache/target/debug") ))
+              rm -rf "${cache:?}/target/debug"
+            fi
           fi
-          if [ $(( $(size_kib "$cache") + remote_size )) -gt "$CACHE_MAX_KIB" ]; then
-            echo "::notice::Skipping $1: FreeBSD Cargo cache would exceed 2 GiB"
+          if [ $(( base_size + remote_size )) -gt "$CACHE_MAX_KIB" ]; then
+            echo "::notice::Skipping $1: FreeBSD Cargo cache would exceed 2 GiB; retaining previous data"
             return 0
           fi
+          rm -rf "${cache:?}/$1"
           mkdir -p "$cache/$1"
           if rsync -a --delete --exclude incremental --timeout=1800 -e "$ssh_args" --rsync-path="$remote_rsync" \
             "freebsd:$2/" "$cache/$1/"; then

@@ -47,6 +47,8 @@ command = sys.argv[2].replace('/var/tmp/', os.environ['FIXTURE_GUEST'] + '/var/t
 sys.exit(subprocess.run(command, shell=True).returncode)
 """)
         self.tool("rsync", """import os, subprocess, sys
+with open(os.path.join(os.environ["HOME"], "rsync.log"), "a") as log:
+    log.write(" ".join(sys.argv[1:]) + "\\n")
 args = []
 items = iter(sys.argv[1:])
 for arg in items:
@@ -155,7 +157,9 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
     def test_oversized_profile_is_skipped_before_transfer(self):
         self.transfer("restore")
         self.write(self.guest, "var/tmp/craft-target/debug/large", "x" * 131072)
+        (self.root / "home/rsync.log").write_text("")
         self.transfer("save", CACHE_MAX_KIB="64")
+        self.assertNotIn("freebsd:/var/tmp/craft-target/debug/", (self.root / "home/rsync.log").read_text())
         self.assertFalse((self.cache / "target/debug/large").exists())
         self.assertLessEqual(int(subprocess.check_output(["du", "-sk", str(self.cache)]).split()[0]), 64)
 
@@ -181,6 +185,19 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *args]).returncode)
         result = self.run_script(TRANSFER, CACHE_PHASE="package")
         self.assertEqual(result.returncode, 23, result)
         self.assertFalse((self.cache / "target/debug").exists())
+
+    def test_save_without_registry_or_git_still_exports_compiled_profile(self):
+        self.write(self.guest, "var/tmp/craft-target/release/app", "built")
+        self.transfer("save", CACHE_PROFILE="release")
+        self.assertEqual((self.cache / "target/release/app").read_text(), "built")
+
+    def test_oversized_new_profile_preserves_smaller_restored_profile(self):
+        self.write(self.cache, "target/release/app", "previous-release")
+        self.write(self.cache, "target/debug/app", "previous-debug")
+        self.write(self.guest, "var/tmp/craft-target/release/app", "x" * 131072)
+        self.transfer("save", CACHE_PROFILE="release", CACHE_MAX_KIB="64")
+        self.assertEqual((self.cache / "target/release/app").read_text(), "previous-release")
+        self.assertEqual((self.cache / "target/debug/app").read_text(), "previous-debug")
 
     def test_transport_failure_is_visible(self):
         self.tool("rsync", "import sys\nsys.exit(23)\n")
