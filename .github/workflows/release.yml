@@ -552,8 +552,13 @@ jobs:
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder librsvg2-common
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Build the Flatpak bundle
+        env:
+          APP_NAME: ${{ inputs.app-name }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          tarball=$(find dist/linux -name "*-linux-${{ matrix.arch }}.tar.gz" -print -quit 2>/dev/null)
+          # The app's own tarball by exact name: a CLI tarball (pdfcraft-cli-…) sits beside it.
+          tarball="dist/linux/${APP_NAME}-${RELEASE_VERSION}-linux-${ARCH}.tar.gz"
           packaging/linux/flatpak-bundle.sh "$tarball"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -578,14 +583,18 @@ jobs:
           path: dist/linux
       - name: Find the release tarball
         id: tarball
+        env:
+          APP_NAME: ${{ inputs.app-name }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          shopt -s nullglob
-          tarballs=(dist/linux/*-linux-${{ matrix.arch }}.tar.gz)
-          if [ "${#tarballs[@]}" -ne 1 ]; then
-            echo "::error::expected one tarball in release-linux-${{ matrix.arch }}, found ${#tarballs[@]}"
+          # The app's own tarball by exact name: a CLI tarball (pdfcraft-cli-…) sits beside it.
+          tarball="dist/linux/${APP_NAME}-${RELEASE_VERSION}-linux-${ARCH}.tar.gz"
+          if [ ! -f "$tarball" ]; then
+            echo "::error::$tarball is not in release-linux-${ARCH}"
             exit 1
           fi
-          echo "path=${tarballs[0]}" >>"$GITHUB_OUTPUT"
+          echo "path=$tarball" >>"$GITHUB_OUTPUT"
       - uses: storytold/craft-common-actions/actions/arch-package@main
         with:
           tarball: ${{ steps.tarball.outputs.path }}
