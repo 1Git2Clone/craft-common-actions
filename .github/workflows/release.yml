@@ -553,12 +553,22 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Build the Flatpak bundle
         env:
-          APP_NAME: ${{ inputs.app-name }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           ARCH: ${{ matrix.arch }}
         run: |
-          # The app's own tarball by exact name: a CLI tarball (pdfcraft-cli-…) sits beside it.
-          tarball="dist/linux/${APP_NAME}-${RELEASE_VERSION}-linux-${ARCH}.tar.gz"
+          shopt -s nullglob
+          # The app's own tarball: <file-prefix>-<version>-linux-<arch>.tar.gz. The file prefix can
+          # differ from app-name (craft-launcher ships artcraft-launcher-*), and CLI or server
+          # tarballs (pdfcraft-cli-*, figcraft-server-*) sit beside it.
+          tarballs=()
+          for f in dist/linux/*-"${RELEASE_VERSION}"-linux-"${ARCH}".tar.gz; do
+            case "${f##*/}" in *-cli-*|*-server-*) ;; *) tarballs+=("$f") ;; esac
+          done
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::expected one app tarball for ${RELEASE_VERSION} in release-linux-${ARCH}, found ${#tarballs[@]}: ${tarballs[*]}"
+            exit 1
+          fi
+          tarball="${tarballs[0]}"
           packaging/linux/flatpak-bundle.sh "$tarball"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -584,16 +594,22 @@ jobs:
       - name: Find the release tarball
         id: tarball
         env:
-          APP_NAME: ${{ inputs.app-name }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           ARCH: ${{ matrix.arch }}
         run: |
-          # The app's own tarball by exact name: a CLI tarball (pdfcraft-cli-…) sits beside it.
-          tarball="dist/linux/${APP_NAME}-${RELEASE_VERSION}-linux-${ARCH}.tar.gz"
-          if [ ! -f "$tarball" ]; then
-            echo "::error::$tarball is not in release-linux-${ARCH}"
+          shopt -s nullglob
+          # The app's own tarball: <file-prefix>-<version>-linux-<arch>.tar.gz. The file prefix can
+          # differ from app-name (craft-launcher ships artcraft-launcher-*), and CLI or server
+          # tarballs (pdfcraft-cli-*, figcraft-server-*) sit beside it.
+          tarballs=()
+          for f in dist/linux/*-"${RELEASE_VERSION}"-linux-"${ARCH}".tar.gz; do
+            case "${f##*/}" in *-cli-*|*-server-*) ;; *) tarballs+=("$f") ;; esac
+          done
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::expected one app tarball for ${RELEASE_VERSION} in release-linux-${ARCH}, found ${#tarballs[@]}: ${tarballs[*]}"
             exit 1
           fi
+          tarball="${tarballs[0]}"
           echo "path=$tarball" >>"$GITHUB_OUTPUT"
       - uses: storytold/craft-common-actions/actions/arch-package@main
         with:
