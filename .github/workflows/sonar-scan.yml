@@ -1,0 +1,19 @@
+name: SonarCloud Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonarcloud-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarcloud:
+    uses: ./.github/workflows/sonarcloud.yml
+    secrets: inherit
