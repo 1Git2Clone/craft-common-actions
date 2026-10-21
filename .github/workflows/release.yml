@@ -12,10 +12,11 @@ on:
         type: string
         required: true
       craft-fonts-ref:
-        description: "Git ref for storytold/craft-fonts embedded font assets (optional)"
+        # The suite's craft-fonts pin. Bump it here and in freebsd.yml together.
+        description: "Git ref for storytold/craft-fonts embedded font assets. Defaults to the suite's pin; override it only for an app that needs another commit. Desktop builds run with CRAFT_FONTS_DIR and CRAFT_FONTS_REQUIRED=1 either way"
         type: string
         required: false
-        default: ""
+        default: "bfcbf714e45a3ea8e98f88ab2b7971372a576414"
       web-craft-fonts:
         description: "Build the web release with craft-fonts too (CRAFT_FONTS_DIR); needs craft-fonts-ref. Off by default: each app's build.rs picks which fonts its web build embeds"
         type: boolean

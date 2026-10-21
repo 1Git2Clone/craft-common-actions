@@ -45,7 +45,6 @@ jobs:
     with:
       app-name: photocraft
       app-title: PhotoCraft
-      craft-fonts-ref: abb83316d96aa59c1cf64784289e378fe9fa5695
       version: ${{ inputs.version }}
     secrets:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -66,9 +65,12 @@ jobs:
 
 List every signing secret explicitly. The signing jobs run in the caller repo's `release` environment and read the values from there, but only for the names listed here: an unlisted name is empty. On the `release` branch the macOS and Windows jobs fail when their signing secrets are empty, rather than shipping unsigned builds.
 
-`craft-fonts-ref` feeds the desktop builds. The web build gets craft-fonts too only with
-`web-craft-fonts: true`: each app's `build.rs` decides which fonts its web build embeds (craft-fonts
-`docs/integration.md`), so opt in once that list fits the app's web size budget.
+`craft-fonts-ref` feeds the desktop builds. It defaults to the suite's craft-fonts pin, so one bump
+here reaches every app's next release; set it only when an app needs another commit. Every desktop
+build runs with `CRAFT_FONTS_DIR` and `CRAFT_FONTS_REQUIRED=1`: an app whose `build.rs` reads
+craft-fonts fails the build instead of shipping without its fonts. The web build gets craft-fonts
+too only with `web-craft-fonts: true`: each app's `build.rs` decides which fonts its web build
+embeds (craft-fonts `docs/integration.md`), so opt in once that list fits the app's web size budget.
 
 ### 2. `packaging-lint.yml`
 Lints all packaging configurations and metadata:
@@ -192,9 +194,10 @@ that quota with other workflows.
 Cache storage and transfer time should be monitored against repository quotas;
 the first run is cold, and no fixed speed-up is assumed.
 
-`craft-fonts-ref` makes the checkout available to builds, default tests and custom
-tests through `CRAFT_FONTS_DIR`. Set `require-craft-fonts: true` to also export
-`CRAFT_FONTS_REQUIRED=1` and fail before building if the checkout is missing.
+`craft-fonts-ref` (default: the same pin as `release.yml`; empty for none) makes the checkout
+available to builds, default tests and custom tests through `CRAFT_FONTS_DIR`. Set
+`require-craft-fonts: true` to also export `CRAFT_FONTS_REQUIRED=1` and fail before building if
+the checkout is missing.
 The application's build script validates its required font faces.
 
 Use a multiline `custom-test-command` for separate test groups. It runs in a
@@ -233,7 +236,7 @@ jobs:
   freebsd:
     uses: storytold/craft-common-actions/.github/workflows/freebsd.yml@main
     with:
-      craft-fonts-ref: 8dcdacd5153e64560d109541a47d806f26f048c0
+      require-craft-fonts: true
 ```
 
 ### 5. `nix.yml`
