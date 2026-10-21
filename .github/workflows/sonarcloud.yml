@@ -1,37 +1,20 @@
 name: SonarCloud
 
 on:
-  workflow_call:
-    inputs:
-      project-key:
-        description: "SonarCloud project key (defaults to storytold_<repo>)"
-        type: string
-        required: false
-        default: ""
-    secrets:
-      SONAR_TOKEN:
-        description: "SonarCloud analysis token"
-        required: true
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
+concurrency:
+  group: sonarcloud-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sonarcloud:
-    name: SonarCloud Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Full history for accurate blame / new-code detection.
-          fetch-depth: 0
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
-        with:
-          args: >
-            -Dsonar.projectKey=${{ inputs.project-key != '' && inputs.project-key || format('storytold_{0}', github.event.repository.name) }}
-            -Dsonar.organization=storytold
+    # Tracked at @main so org-wide CI improvements propagate without PR churn.
+    uses: storytold/craft-common-actions/.github/workflows/sonarcloud.yml@main
+    secrets: inherit
