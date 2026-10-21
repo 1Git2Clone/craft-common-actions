@@ -242,7 +242,8 @@ fi
         release_data = yaml.load(release_path.read_text(), Loader=yaml.BaseLoader)
         matrix = release_data["jobs"]["freebsd"].get("strategy", {}).get("matrix", {})
         self.assertIn("arch", matrix)
-        self.assertEqual(matrix["arch"], ["x86_64", "aarch64"])
+        # aarch64 is paused in releases until it fits the job limit (#39).
+        self.assertEqual(matrix["arch"], ["x86_64"])
 
     def vm_steps(self):
         release = yaml.load((ROOT / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)

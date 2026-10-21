@@ -630,7 +630,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, aarch64]
+        # aarch64 is dropped from releases until it can be built in time: the emulated VM
+        # takes over 5 hours for most apps. See storytold/craft-common-actions#39.
+        arch: [x86_64]
     env:
       CARGO_HOME: /var/tmp/craft-cargo
       CARGO_TARGET_DIR: /var/tmp/craft-target
