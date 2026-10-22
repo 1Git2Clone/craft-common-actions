@@ -83,14 +83,28 @@ jobs:
           path: dist
       - name: Install the MSI, check it, run it, uninstall it
         shell: pwsh
+        env:
+          APP_NAME: ${{ inputs.app-name }}
+          APP_DIR: ${{ inputs.app-dir }}
+          MAIN_BINARY: ${{ inputs.main-binary }}
+          CLI_BINARY: ${{ inputs.cli-binary }}
+          IS_PER_USER: ${{ inputs.is-per-user }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $mainExeName = if ($env:MAIN_BINARY -ne '') { $env:MAIN_BINARY } else { "$env:APP_NAME.exe" }
+          $cliExeName = if ($env:CLI_BINARY -ne '') { $env:CLI_BINARY } else { "$env:APP_NAME-cli.exe" }
+          # Require single path components before installing or running anything.
+          foreach ($name in $env:APP_DIR, $mainExeName, $cliExeName) {
+            if ([string]::IsNullOrEmpty($name) -or $name -match '[<>:"/\\|?*\x00-\x1F]' -or $name -match '[. ]\z') {
+              throw 'app-dir and executable names must be nonempty names without paths, invalid Windows filename characters, or trailing dots/spaces'
+            }
+          }
           $msi = (Get-ChildItem dist/*.msi | Select-Object -First 1).FullName
 
-          if ("${{ inputs.is-per-user }}" -eq "true") {
-            $startLnk = Join-Path ([Environment]::GetFolderPath('Programs')) '${{ inputs.app-dir }}.lnk'
-            $deskLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) '${{ inputs.app-dir }}.lnk'
-            $key = 'HKCU:\Software\Learning Machines LLC\${{ inputs.app-dir }}'
+          if ($env:IS_PER_USER -eq "true") {
+            $startLnk = Join-Path ([Environment]::GetFolderPath('Programs')) "$env:APP_DIR.lnk"
+            $deskLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) "$env:APP_DIR.lnk"
+            $key = "HKCU:\Software\Learning Machines LLC\$env:APP_DIR"
             function Install([string[]] $props) {
               $p = Start-Process msiexec.exe -ArgumentList (@('/i', "`"$msi`"", '/qn', '/l*v', 'install.log') + $props) -Wait -PassThru
               if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 60; throw "msiexec /i exited $($p.ExitCode)" }
@@ -98,37 +112,34 @@ jobs:
             function Uninstall([string] $exe) {
               $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn' -Wait -PassThru
               if ($p.ExitCode -ne 0) { throw "msiexec /x exited $($p.ExitCode)" }
-              foreach ($left in $exe, $startLnk, $deskLnk) { if (Test-Path $left) { throw "uninstall left $left behind" } }
-              if ((Get-ItemProperty $key -ErrorAction SilentlyContinue).InstallDir) { throw "uninstall left InstallDir in $key" }
+              foreach ($left in $exe, $startLnk, $deskLnk) { if (Test-Path -LiteralPath $left) { throw "uninstall left $left behind" } }
+              if ((Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue).InstallDir) { throw "uninstall left InstallDir in $key" }
               Write-Output 'ok uninstalled'
             }
             function Expect([bool] $ok, [string] $what) { if (-not $ok) { Get-Content install.log -Tail 60; throw $what }; Write-Output "ok $what" }
 
             Install @()
-            $mainExeName = if ('${{ inputs.main-binary }}' -ne '') { '${{ inputs.main-binary }}' } else { '${{ inputs.app-name }}.exe' }
-            $exe = Join-Path $env:LOCALAPPDATA "Programs\${{ inputs.app-dir }}\$mainExeName"
-            Expect (Test-Path $exe) "installed in default folder: $exe"
+            $exe = Join-Path $env:LOCALAPPDATA "Programs\$env:APP_DIR\$mainExeName"
+            Expect (Test-Path -LiteralPath $exe) "installed in default folder: $exe"
             $bytes = [System.IO.File]::ReadAllBytes($exe)
             $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 4)
             Expect ($machine -eq 0xAA64) "the exe is ARM64 (machine 0x$('{0:X}' -f $machine))"
-            Expect (Test-Path $startLnk) "Start Menu shortcut: $startLnk"
-            Expect (Test-Path $deskLnk) "desktop shortcut: $deskLnk"
+            Expect (Test-Path -LiteralPath $startLnk) "Start Menu shortcut: $startLnk"
+            Expect (Test-Path -LiteralPath $deskLnk) "desktop shortcut: $deskLnk"
             Uninstall $exe
 
-            $dir = Join-Path $env:LOCALAPPDATA '${{ inputs.app-dir }} Test Folder'
+            $dir = Join-Path $env:LOCALAPPDATA "$env:APP_DIR Test Folder"
             Install @("INSTALLFOLDER=`"$dir\`"", 'INSTALLDESKTOPSHORTCUT=0')
             $exe = Join-Path $dir $mainExeName
-            Expect (Test-Path $exe) "installed in chosen folder: $exe"
-            Expect (Test-Path $startLnk) "Start Menu shortcut: $startLnk"
-            Expect (-not (Test-Path $deskLnk)) 'no desktop shortcut when not wanted'
+            Expect (Test-Path -LiteralPath $exe) "installed in chosen folder: $exe"
+            Expect (Test-Path -LiteralPath $startLnk) "Start Menu shortcut: $startLnk"
+            Expect (-not (Test-Path -LiteralPath $deskLnk)) 'no desktop shortcut when not wanted'
             Uninstall $exe
-            Expect (-not (Test-Path $dir)) 'uninstall removed chosen folder'
+            Expect (-not (Test-Path -LiteralPath $dir)) 'uninstall removed chosen folder'
           } else {
             $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'install.log' -Wait -PassThru
             if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 60; throw "msiexec /i exited $($p.ExitCode)" }
-            $dir = Join-Path $env:ProgramFiles '${{ inputs.app-dir }}'
-            $mainExeName = if ('${{ inputs.main-binary }}' -ne '') { '${{ inputs.main-binary }}' } else { '${{ inputs.app-name }}.exe' }
-            $cliExeName = if ('${{ inputs.cli-binary }}' -ne '') { '${{ inputs.cli-binary }}' } else { '${{ inputs.app-name }}-cli.exe' }
+            $dir = Join-Path $env:ProgramFiles $env:APP_DIR
 
             $exeList = @($mainExeName)
             if ($cliExeName -ne '' -and $cliExeName -ne $mainExeName) {
@@ -136,7 +147,7 @@ jobs:
             }
             foreach ($exe in $exeList) {
               $path = Join-Path $dir $exe
-              if (-not (Test-Path $path)) { throw "$exe not installed in $dir" }
+              if (-not (Test-Path -LiteralPath $path)) { throw "$exe not installed in $dir" }
               $bytes = [System.IO.File]::ReadAllBytes($path)
               $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 4)
               if ($machine -ne 0xAA64) { throw "$exe is for machine 0x$('{0:X}' -f $machine), not ARM64" }
@@ -145,7 +156,7 @@ jobs:
 
             if ($cliExeName -ne '') {
               $cli = Join-Path $dir $cliExeName
-              if (Test-Path $cli) {
+              if (Test-Path -LiteralPath $cli) {
                 $out = & $cli --version 2>&1 | Out-String
                 if ($LASTEXITCODE -ne 0) { Write-Output $out; throw "$cli --version exited $LASTEXITCODE" }
                 Write-Output "ok $cliExeName --version: $($out.Trim())"
@@ -154,6 +165,6 @@ jobs:
 
             $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn' -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "msiexec /x exited $($p.ExitCode)" }
-            if (Test-Path (Join-Path $dir $mainExeName)) { throw "uninstall left $mainExeName behind" }
+            if (Test-Path -LiteralPath (Join-Path $dir $mainExeName)) { throw "uninstall left $mainExeName behind" }
             Write-Output 'ok uninstalled'
           }
