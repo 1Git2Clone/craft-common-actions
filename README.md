@@ -202,6 +202,10 @@ available to builds, default tests and custom tests through `CRAFT_FONTS_DIR`. S
 the checkout is missing.
 The application's build script validates its required font faces.
 
+Tests (default and custom) run as an ordinary user, `craft-test`, not root: root is never
+refused a file, so a test that expects "permission denied" would fail. The build and packaging
+stay root.
+
 Use a multiline `custom-test-command` for separate test groups. It runs in a
 separate `sh -eu` process whose failure stops the VM script before packaging.
 Do not rely on `errexit` to catch nonfinal commands of an `&&` list followed by
