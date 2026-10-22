@@ -17,7 +17,7 @@ Full multi-platform release pipeline for Craft apps:
 - **FreeBSD** (FreeBSD 15.1-STABLE VM build & packaging for x86_64; aarch64 is cross-compiled in the same x86_64 VM and opt-in through `freebsd-architectures`, see #39)
 - **Arch Linux** (x86_64, aarch64 `.pkg.tar.zst` built via `makepkg` from release tarball, named by bundle id; set `has-arch: false` to skip)
 - **WebAssembly** (wasm32-unknown-unknown with Trunk)
-- **Linux RISC-V 64** (cross-compilation for riscv64gc-unknown-linux-gnu, producing deb, rpm, and tar.gz via SHA256-verified nfpm)
+- **Linux RISC-V 64** (cross-compilation for riscv64gc-unknown-linux-gnu, producing deb, rpm, and tar.gz via SHA256-verified nfpm; built on Ubuntu 24.04, so it sets `GLIBC_FLOOR=2.39` for the app's `nfpm.yaml` to declare, see #44)
 - **Draft Release** (computes `SHA256SUMS.txt` and publishes/updates draft GitHub Release)
 
 #### Caller Example:
