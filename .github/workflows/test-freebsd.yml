@@ -6,6 +6,9 @@ on:
       - .github/workflows/freebsd.yml
       - .github/workflows/release.yml
       - actions/freebsd-cargo-cache/**
+      - actions/checkout-craft-i18n/**
+      - .github/workflows/i18n-gate.yml
+      - .github/workflows/windows-arm64.yml
       - .github/workflows/test-freebsd.yml
       - tests/**
   push:
@@ -14,6 +17,9 @@ on:
       - .github/workflows/freebsd.yml
       - .github/workflows/release.yml
       - actions/freebsd-cargo-cache/**
+      - actions/checkout-craft-i18n/**
+      - .github/workflows/i18n-gate.yml
+      - .github/workflows/windows-arm64.yml
       - .github/workflows/test-freebsd.yml
       - tests/**
   workflow_dispatch:

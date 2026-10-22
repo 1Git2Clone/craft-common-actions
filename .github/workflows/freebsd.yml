@@ -54,6 +54,12 @@ permissions:
   contents: read
 
 jobs:
+  # A pull request that moves craft-i18n.rev must keep the app's complete languages complete.
+  i18n-gate:
+    uses: storytold/craft-common-actions/.github/workflows/i18n-gate.yml@main
+    with:
+      pin-changes-only: true
+
   freebsd:
     name: FreeBSD 15 ${{ matrix.arch }} (build + test)
     runs-on: ubuntu-latest
@@ -74,6 +80,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - name: Start the FreeBSD VM
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
@@ -187,6 +195,7 @@ jobs:
             fi
             export CRAFT_FONTS_REQUIRED=1
           fi
+          if [ -f craft-i18n.rev ]; then export CRAFT_I18N_DIR="$PWD/craft-i18n" CRAFT_I18N_REQUIRED=1; fi
           # Written by "Set up the aarch64 cross toolchain": cargo then builds for aarch64.
           [ ! -f /var/tmp/craft-cross/env ] || . /var/tmp/craft-cross/env
           # Tests run as an ordinary user: root is never refused a file, so a test that expects
@@ -242,6 +251,7 @@ jobs:
           fi
           if [ -d craft-fonts ]; then export CRAFT_FONTS_DIR="$PWD/craft-fonts"; fi
           if [ "${{ inputs.require-craft-fonts }}" = true ]; then export CRAFT_FONTS_REQUIRED=1; fi
+          if [ -f craft-i18n.rev ]; then export CRAFT_I18N_DIR="$PWD/craft-i18n" CRAFT_I18N_REQUIRED=1; fi
           if [ ! -f packaging/freebsd/package.sh ]; then
             echo "error: requested FreeBSD packaging script is missing" >&2
             exit 1

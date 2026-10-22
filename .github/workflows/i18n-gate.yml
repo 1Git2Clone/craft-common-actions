@@ -1,0 +1,74 @@
+name: "i18n gate"
+
+on:
+  workflow_call:
+    inputs:
+      pin-changes-only:
+        description: "Run only on a pull request whose diff touches craft-i18n.rev; succeed doing nothing otherwise"
+        type: boolean
+        required: false
+        default: false
+      skip:
+        description: "Succeed without running the gate"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Without craft-i18n.rev, or when skipped, every step after the checkouts is a no-op and the job
+  # succeeds, so a job that `needs:` it still runs.
+  i18n-gate:
+    timeout-minutes: 90
+    name: i18n gate
+    runs-on: ubuntu-22.04
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request's merge commit and its base, to see whether the PR moves the pin.
+          fetch-depth: ${{ inputs.pin-changes-only && 2 || 1 }}
+      - name: Check out craft-i18n
+        id: i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
+      - name: Decide whether to run
+        id: run
+        if: steps.i18n.outputs.rev != '' && !inputs.skip
+        env:
+          PIN_CHANGES_ONLY: ${{ inputs.pin-changes-only }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$PIN_CHANGES_ONLY" = true ]; then
+            [ "$EVENT" = pull_request ] || exit 0
+            git diff --quiet HEAD^1 HEAD -- craft-i18n.rev && exit 0
+          fi
+          echo "gate=true" >>"$GITHUB_OUTPUT"
+      - if: steps.run.outputs.gate == 'true'
+        uses: storytold/craft-common-actions/actions/install-linux-deps@main
+      - if: steps.run.outputs.gate == 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+      - if: steps.run.outputs.gate == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: i18n-gate
+      # A filter that matches no test passes, so count the tests that ran.
+      - name: Run the i18n_gate tests
+        if: steps.run.outputs.gate == 'true'
+        env:
+          CRAFT_I18N_GATE: "1"
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked i18n_gate 2>&1 | tee "$RUNNER_TEMP/i18n-gate.log"
+          passed=$(grep -cE '^test .+ \.\.\. ok$' "$RUNNER_TEMP/i18n-gate.log" || true)
+          if [ "$passed" -eq 0 ]; then
+            echo "::error::craft-i18n.rev pins craft-i18n, but no i18n_gate test ran. Name the app's completeness tests i18n_gate_*."
+            exit 1
+          fi
+          echo "$passed i18n_gate tests passed"

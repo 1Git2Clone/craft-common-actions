@@ -72,6 +72,11 @@ on:
         type: boolean
         required: false
         default: false
+      skip-i18n-gate:
+        description: "Package without the i18n gate. Honoured only on workflow_dispatch, for manual test runs"
+        type: boolean
+        required: false
+        default: false
 
     secrets:
       APPLE_CERTIFICATE:
@@ -124,10 +129,16 @@ jobs:
           input-version: ${{ inputs.version }}
           app-title: ${{ inputs.app-title }}
 
+  # Packaging waits for the gate. Without craft-i18n.rev the gate does nothing and succeeds.
+  i18n-gate:
+    uses: storytold/craft-common-actions/.github/workflows/i18n-gate.yml@main
+    with:
+      skip: ${{ inputs.skip-i18n-gate && github.event_name == 'workflow_dispatch' }}
+
   macos:
     timeout-minutes: 90
     name: macOS universal
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: macos-15-xlarge
     environment: release
     env:
@@ -209,6 +220,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
@@ -253,7 +266,7 @@ jobs:
   windows:
     timeout-minutes: 90
     name: Windows ${{ matrix.arch }}
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: windows-latest
     environment: release
     strategy:
@@ -344,6 +357,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
@@ -382,7 +397,7 @@ jobs:
   linux:
     timeout-minutes: 90
     name: Linux ${{ matrix.arch }}
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -447,6 +462,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - uses: storytold/craft-common-actions/actions/install-linux-deps@main
         with:
           deb-arch: ${{ matrix.deb }}
@@ -625,7 +642,7 @@ jobs:
   freebsd:
     name: FreeBSD ${{ matrix.arch }}
     if: inputs.has-freebsd
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -695,6 +712,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - name: Start the FreeBSD VM
         uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
@@ -738,6 +757,7 @@ jobs:
           git config --global --add safe.directory "*"
           if [ -n "$INPUT_VERSION" ]; then cargo xtask version set "$VERSION" || cargo run -q -p xtask -- version set "$VERSION"; fi
           export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
+          if [ -f craft-i18n.rev ]; then export CRAFT_I18N_DIR="$PWD/craft-i18n" CRAFT_I18N_REQUIRED=1; fi
           if [ -f packaging/freebsd/package.sh ]; then
             bash packaging/freebsd/package.sh
           else
@@ -791,7 +811,7 @@ jobs:
     timeout-minutes: 90
     name: Web (wasm)
     if: inputs.has-web
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -860,6 +880,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - name: Apply version override
         if: inputs.version != ''
         run: cargo xtask version set "$VERSION"
@@ -882,7 +904,7 @@ jobs:
     timeout-minutes: 90
     name: Linux riscv64
     if: inputs.has-riscv64
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: ubuntu-24.04
     env:
       CARGO_TERM_COLOR: always
@@ -941,6 +963,8 @@ jobs:
         uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
         with:
           ref: ${{ inputs.craft-fonts-ref }}
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
@@ -985,7 +1009,7 @@ jobs:
     timeout-minutes: 90
     name: Server Linux ${{ matrix.arch }}
     if: inputs.has-server
-    needs: version
+    needs: [version, i18n-gate]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -1005,6 +1029,8 @@ jobs:
       FIGCRAFT_BUILD_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
@@ -1032,7 +1058,7 @@ jobs:
     timeout-minutes: 10
     name: Draft GitHub Release
     if: "!cancelled() && !contains(needs.*.result, 'failure')"
-    needs: [version, macos, windows, linux, linux-riscv64, flatpak, arch, freebsd, web, server]
+    needs: [version, i18n-gate, macos, windows, linux, linux-riscv64, flatpak, arch, freebsd, web, server]
     runs-on: ubuntu-latest
     environment: release
     permissions:
