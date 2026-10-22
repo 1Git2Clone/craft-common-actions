@@ -245,6 +245,11 @@ jobs:
 
 Evaluates the repository's Nix flake across supported systems without building, validating flake evaluation and `Cargo.lock` synchronization.
 
+`extra-args` defaults to `--no-build --all-systems`. It accepts whitespace-separated
+arguments with shell-style quotes and escapes for values containing spaces.
+Arguments are passed literally: shell commands, variable expansion and globbing
+are not evaluated. Malformed quoting fails the check.
+
 #### Caller Example:
 
 ```yaml
