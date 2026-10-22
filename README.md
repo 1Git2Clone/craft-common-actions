@@ -67,6 +67,32 @@ jobs:
 
 List every signing secret explicitly. The signing jobs run in the caller repo's `release` environment and read the values from there, but only for the names listed here: an unlisted name is empty. On the `release` branch the macOS and Windows jobs fail when their signing secrets are empty, rather than shipping unsigned builds.
 
+macOS and Windows packages are signed by the app's own packaging scripts. `release.yml` does not request `id-token` or `attestations`, so existing callers keep building as they do now.
+
+Build provenance, a CycloneDX SBOM, and a Sigstore signature of the published files are a second job. Add it only in an app that is ready to grant those permissions. `release.yml` does not call `supply-chain.yml`.
+
+```yaml
+  supply-chain:
+    needs: release
+    if: github.ref == 'refs/heads/release'
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    uses: storytold/craft-common-actions/.github/workflows/supply-chain.yml@main
+    with:
+      version: ${{ needs.release.outputs.version }}
+```
+
+After a release that ran the extra job:
+
+```sh
+gh attestation verify PhotoCraft-1.2.3-macos-universal.zip --owner storytold
+```
+
+The command checks the signature and prints the repository and commit that built the file. The SBOM is attached to the draft release as `sbom.cyclonedx.json`.
+
 `craft-fonts-ref` feeds the desktop builds. It defaults to the suite's craft-fonts pin, so one bump
 here reaches every app's next release; set it only when an app needs another commit. Every desktop
 build runs with `CRAFT_FONTS_DIR` and `CRAFT_FONTS_REQUIRED=1`: an app whose `build.rs` reads

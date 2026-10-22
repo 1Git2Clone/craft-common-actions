@@ -115,6 +115,14 @@ on:
       AZURE_CERT_PROFILE:
         required: false
 
+    outputs:
+      version:
+        description: "Resolved release version without a leading v"
+        value: ${{ jobs.version.outputs.version }}
+      prerelease:
+        description: "Whether the resolved version is a prerelease"
+        value: ${{ jobs.version.outputs.prerelease }}
+
 permissions:
   contents: read
 
@@ -260,6 +268,9 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: packaging/macos/verify.sh --arch universal
+      - name: Note missing macOS verification
+        if: github.ref == 'refs/heads/release' && hashFiles('packaging/macos/verify.sh') == ''
+        run: echo "::warning::packaging/macos/verify.sh is missing, so this release was not checked for a signature or notarization ticket."
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-macos
