@@ -227,6 +227,11 @@ Tests (default and custom) run as an ordinary user, `craft-test`, not root: root
 refused a file, so a test that expects "permission denied" would fail. The build and packaging
 stay root.
 
+`cargo-build-extra-args` and `cargo-test-extra-args` accept whitespace-separated
+arguments with shell-style quotes and escapes for values containing spaces.
+Arguments are passed literally: shell commands, variable expansion and globbing
+are not evaluated. Malformed quoting fails the invoked build or test step.
+
 Use a multiline `custom-test-command` for separate test groups. It runs in a
 separate `sh -eu` process whose failure stops the VM script before packaging.
 Do not rely on `errexit` to catch nonfinal commands of an `&&` list followed by

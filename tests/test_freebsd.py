@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = Path(os.environ.get("FREEBSD_WORKFLOW", ROOT / ".github/workflows/freebsd.yml"))
 DATA = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
 STEPS = DATA["jobs"]["freebsd"]["steps"]
-BUILD_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Build and test")
+BUILD_STEP = next(step for step in STEPS if step.get("name") == "Build and test")
+BUILD_TEMPLATE = BUILD_STEP["run"]
 CROSS_STEP = next(step for step in STEPS if step.get("name") == "Set up the aarch64 cross toolchain")
 PACKAGE_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Build and validate the FreeBSD package")
 
@@ -29,13 +30,15 @@ PACKAGE_TEMPLATE = next(step["run"] for step in STEPS if step.get("name") == "Bu
 class FreeBSDRunTests(unittest.TestCase):
     def run_vm(self, *, command="", fail_test=0, package="valid", package_check=True,
                skip_tests=False, fonts=False, require_fonts=False, fail_build=False, arch="x86_64", restore_failed=False, checkpoint_failed=False,
-               cross_env=False, root=False):
+               cross_env=False, root=False, build_extra_args="", test_extra_args=""):
         inputs = {key: value.get("default", "") for key, value in DATA["on"]["workflow_call"]["inputs"].items()}
         inputs.update({
             "custom-test-command": command,
             "skip-tests": str(skip_tests).lower(),
             "run-package-check": str(package_check).lower(),
             "require-craft-fonts": str(require_fonts).lower(),
+            "cargo-build-extra-args": build_extra_args,
+            "cargo-test-extra-args": test_extra_args,
         })
 
         def replace(match):
@@ -63,6 +66,7 @@ class FreeBSDRunTests(unittest.TestCase):
             cargo.write_text("""#!/bin/sh
 set -eu
 printf '%s|%s|%s|%s\\n' "$1" "${CRAFT_FONTS_DIR-}" "${CRAFT_FONTS_REQUIRED-}" "$*" >> "$PWD/cargo.log"
+python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$PWD/args.jsonl"
 printf '%s\\n' "${CARGO_BUILD_TARGET-}" >> "$PWD/target.log"
 if [ "$1" = build ]; then
   [ "$FAIL_BUILD" = false ] || exit 31
@@ -115,6 +119,12 @@ fi
             env = os.environ.copy()
             for key in ("CRAFT_FONTS_DIR", "CRAFT_FONTS_REQUIRED"):
                 env.pop(key, None)
+            # The VM wrapper forwards only the configured SSH SendEnv names.
+            vm = next(step for step in STEPS if step.get("uses", "").startswith("vmactions/freebsd-vm@"))
+            forwarded = vm["with"]["envs"].split()
+            configured = {**DATA["jobs"]["freebsd"].get("env", {}), **BUILD_STEP.get("env", {})}
+            env.update({key: re.sub(r"\$\{\{ inputs\.(.*?) \}\}", replace, value)
+                        for key, value in configured.items() if key in forwarded})
             env.update(PATH=str(tools) + os.pathsep + env["PATH"], FAIL_TEST=str(fail_test),
                        PACKAGE_MODE=package, FAIL_BUILD=str(fail_build).lower(),
                        TARGET_ARCH=arch, CARGO_HOME="/cargo", CARGO_TARGET_DIR="/target")
@@ -136,9 +146,62 @@ fi
             admin = (work / "admin.log").read_text().splitlines() if (work / "admin.log").exists() else []
             package_log = (work / "package.log").read_text().splitlines() if (work / "package.log").exists() else []
             remaining = [p.parent.name for p in (work / "guest/craft-target").glob("*/partial")]
+            args_log = work / "args.jsonl"
+            args = [json.loads(line) for line in args_log.read_text().splitlines()] if args_log.exists() else []
             outcome = dict(admin=admin, work=str(work), targets=targets, package_log=package_log, remaining=remaining, code=result.returncode, packaged=(work / "package-ran").exists(),
-                           log=log, output=result.stdout + result.stderr)
+                           log=log, args=args, injected=(work / "injected").exists(), output=result.stdout + result.stderr)
             return outcome
+
+    def test_extra_args_preserve_quotes_escapes_and_empty_values(self):
+        value = '--features "feature one"\n\t-p path\\ with\\ spaces --config \'say "hi"\' ""'
+        expected = ["--features", "feature one", "-p", "path with spaces", "--config", 'say "hi"', ""]
+        result = self.run_vm(build_extra_args=value, test_extra_args=value, root=True, package_check=False)
+        self.assertEqual(result["code"], 0, result)
+        self.assertEqual(result["args"], [
+            ["build", "--workspace", "--all-targets", "--locked", *expected],
+            ["test", "--workspace", "--locked", *expected],
+        ])
+
+    def test_extra_args_shell_syntax_is_literal(self):
+        cases = [
+            ("--features fixture; touch injected; #", ["--features", "fixture;", "touch", "injected;", "#"]),
+            ("--features fixture\ntouch injected", ["--features", "fixture", "touch", "injected"]),
+            ("--features fixture && touch injected", ["--features", "fixture", "&&", "touch", "injected"]),
+            ("--features fixture | touch injected", ["--features", "fixture", "|", "touch", "injected"]),
+            ("--features fixture > injected", ["--features", "fixture", ">", "injected"]),
+            ('"$(touch injected)"', ["$(touch injected)"]),
+            ('"`touch injected`"', ["`touch injected`"]),
+            ('"$HOME" *', ["$HOME", "*"]),
+            ("--features fixture\nCRAFT_TESTS\ntouch injected\n#",
+             ["--features", "fixture", "CRAFT_TESTS", "touch", "injected", "#"]),
+            ("--features fixture\nPY\ntouch injected\n#",
+             ["--features", "fixture", "PY", "touch", "injected", "#"]),
+        ]
+        for key, index in (("build_extra_args", 0), ("test_extra_args", 1)):
+            for value, expected in cases:
+                with self.subTest(input=key, value=value):
+                    result = self.run_vm(**{key: value}, root=True, package_check=False)
+                    self.assertEqual(result["code"], 0, result)
+                    self.assertFalse(result["injected"], result)
+                    base = (["build", "--workspace", "--all-targets", "--locked"] if index == 0
+                            else ["test", "--workspace", "--locked"])
+                    self.assertEqual(result["args"][index], [*base, *expected])
+
+    def test_extra_args_malformed_quotes_stop_before_cargo(self):
+        for key, calls in (("build_extra_args", []),
+                           ("test_extra_args", [["build", "--workspace", "--all-targets", "--locked"]])):
+            with self.subTest(input=key):
+                result = self.run_vm(**{key: '--features "unterminated'})
+                self.assertNotEqual(result["code"], 0, result)
+                self.assertEqual(result["args"], calls)
+                self.assertFalse(result["packaged"], result)
+
+    def test_extra_args_unused_test_input_is_not_evaluated(self):
+        for options in ({"skip_tests": True}, {"arch": "aarch64"}, {"command": "cargo test --lib"}):
+            with self.subTest(options=options):
+                result = self.run_vm(test_extra_args='"; touch injected', package_check=False, **options)
+                self.assertEqual(result["code"], 0, result)
+                self.assertFalse(result["injected"], result)
 
     def test_each_failure_in_custom_chain_is_fatal_before_packaging(self):
         command = " && ".join("cargo test --group " + str(n) for n in range(1, 5))
