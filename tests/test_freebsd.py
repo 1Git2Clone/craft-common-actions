@@ -308,10 +308,32 @@ fi
     def test_release_workflow_freebsd_matrix(self):
         release_path = ROOT / ".github/workflows/release.yml"
         release_data = yaml.load(release_path.read_text(), Loader=yaml.BaseLoader)
-        matrix = release_data["jobs"]["freebsd"].get("strategy", {}).get("matrix", {})
-        self.assertIn("arch", matrix)
-        # aarch64 is paused in releases until it fits the job limit (#39).
-        self.assertEqual(matrix["arch"], ["x86_64"])
+        job = release_data["jobs"]["freebsd"]
+        self.assertEqual(job["strategy"]["matrix"]["arch"], "${{ fromJSON(inputs.freebsd-architectures) }}")
+        # aarch64 is opt-in until each app's package.sh can package a cross build (#39).
+        default = release_data["on"]["workflow_call"]["inputs"]["freebsd-architectures"]["default"]
+        self.assertEqual(json.loads(default), ["x86_64"])
+
+    def test_release_workflow_cross_compiles_aarch64_like_ci(self):
+        release = yaml.load((ROOT / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)
+        steps = release["jobs"]["freebsd"]["steps"]
+        self.assertEqual(next(step for step in steps if step.get("name") == CROSS_STEP["name"]), CROSS_STEP)
+        vm = next(step["with"] for step in steps if "with" in step and "prepare" in step["with"])
+        self.assertNotIn("arch", vm)
+        names = [step.get("name") for step in steps]
+        self.assertLess(names.index(CROSS_STEP["name"]), names.index("Build and package"))
+
+    def test_release_workflow_rejects_unsupported_architectures_before_the_vm(self):
+        release = yaml.load((ROOT / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)
+        steps = release["jobs"]["freebsd"]["steps"]
+        check = steps[0]
+        self.assertEqual(check["name"], "Check the FreeBSD architecture")
+        self.assertEqual(check["env"]["ARCH"], "${{ matrix.arch }}")
+        for arch, code in (("x86_64", 0), ("aarch64", 0), ("riscv64", 1), ("amd64", 1), ("", 1)):
+            with self.subTest(arch=arch):
+                result = subprocess.run(["bash", "-e", "-c", check["run"]], env={**os.environ, "ARCH": arch},
+                                        text=True, capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, code, result)
 
     def vm_steps(self):
         release = yaml.load((ROOT / ".github/workflows/release.yml").read_text(), Loader=yaml.BaseLoader)
@@ -339,7 +361,7 @@ fi
                     self.assertIn(chosen, result.stdout, result)
                     self.assertNotIn(other, result.stdout, result)
                     # Only the cross-compiling aarch64 leg pins the quarterly package branch.
-                    pinned = name == "freebsd.yml" and arch == "aarch64"
+                    pinned = arch == "aarch64"
                     self.assertEqual(repos, ["FreeBSD.conf"] if pinned else [], result)
 
     def test_run_step_works_without_a_rustup_environment(self):
