@@ -12,7 +12,7 @@ on:
         type: string
         required: true
       craft-fonts-ref:
-        # The suite's craft-fonts pin. Bump it here and in freebsd.yml together.
+        # The suite's craft-fonts pin. Bump it here, in freebsd.yml and in gate.yml together.
         description: "Git ref for storytold/craft-fonts embedded font assets. Defaults to the suite's pin; override it only for an app that needs another commit. Desktop builds run with CRAFT_FONTS_DIR and CRAFT_FONTS_REQUIRED=1 either way"
         type: string
         required: false

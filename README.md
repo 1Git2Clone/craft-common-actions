@@ -350,6 +350,79 @@ jobs:
       pin-changes-only: true
 ```
 
+### 7. `gate.yml`
+
+The quality gate for an app's pull requests and pushes to main. It runs `command` (by default
+`cargo xtask ci`) on each runner in `os`, after the suite's shared setup:
+
+- the app and craft-fonts (at the suite's pin, with `CRAFT_FONTS_REQUIRED=1`) checked out without
+  persisted credentials, and craft-i18n when the app has `craft-i18n.rev`;
+- `packages` installed through `actions/install-apt-packages` on Linux legs;
+- the channel from `rust-toolchain.toml`, or `toolchain`, with clippy, rustfmt and `targets`;
+- prebuilt cargo tools from `tools` (by default `cargo-nextest`);
+- `CARGO_PROFILE_DEV_DEBUG=line-tables-only` (set `dev-debug: ""` to keep the repository's
+  profile) and the caller's `env`, `linux-env` and `windows-env` lines, each `KEY=VALUE`;
+- a rust-cache dependency cache that only the default branch saves, so pull requests restore
+  main's entry and never evict it. The key includes the root `Cargo.toml`, since rust-cache hashes
+  only the members' manifests. Bump `cache-version` to start afresh.
+
+After the gate, the job fails if `Cargo.lock` changed. Legs run with `fail-fast: false`; each has
+`timeout-minutes` (default 60). Jobs only some apps need, such as fuzzing or web builds, stay in
+the app's own workflow next to the call.
+
+#### Caller Example:
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a PR branch cancels its older run. Every push to main gets its own run, so each
+# state of main is checked to the end.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate:
+    # Tracks @main so suite-wide CI fixes reach every app without a PR in each repository.
+    uses: storytold/craft-common-actions/.github/workflows/gate.yml@main
+    with:
+      packages: >-
+        pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev
+        libxrandr-dev libxi-dev libfontconfig1-dev libfreetype-dev mesa-vulkan-drivers
+```
+
+Concurrency belongs to the caller: a reusable workflow cannot set it for the run.
+
+An app that also checks Windows on main, on manual runs and on pull requests labelled `full-ci`,
+with per-OS environment and a shorter Windows gate (PDFCraft's call):
+
+```yaml
+jobs:
+  gate:
+    uses: storytold/craft-common-actions/.github/workflows/gate.yml@main
+    with:
+      os: ${{ (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-24.04","windows-latest"]' || '["ubuntu-24.04"]' }}
+      craft-fonts-ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
+      packages: >-
+        libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+        libgtk-3-dev qpdf poppler-utils
+      tools: cargo-nextest@0.9.149,cargo-deny@0.20.2
+      linux-env: PDFCRAFT_ORACLES_REQUIRED=1
+      windows-env: PDFCRAFT_REQUIRE_WINRES=1
+      # Windows checks what differs by platform: the build (with resources) and the tests.
+      windows-command: |
+        cargo clippy --workspace --all-targets --locked -- -D warnings
+        cargo test --workspace --locked
+```
+
 ## Composite Actions
 
 Individual actions are also available for composing custom pipelines:
@@ -398,6 +471,7 @@ using `uses` cannot set `timeout-minutes`.
 | Release FreeBSD | 300 |
 | Standalone FreeBSD build, test and optional package | 300 |
 | Windows ARM64 package / install | 90 / 30 |
+| CI gate, per leg (`timeout-minutes` input) | 60 |
 
 The new limits leave headroom over sampled Craft app job timings; the existing
 FreeBSD and ARM64 limits are retained. Treat these as initial limits, review

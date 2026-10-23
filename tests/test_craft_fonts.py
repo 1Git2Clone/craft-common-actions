@@ -17,10 +17,12 @@ def default_ref(name):
 
 
 class CraftFontsTests(unittest.TestCase):
-    def test_release_and_freebsd_share_one_pinned_commit(self):
+    def test_shared_workflows_share_one_pinned_commit(self):
         ref = default_ref('release.yml')
         self.assertRegex(ref, r'^[0-9a-f]{40}$')
-        self.assertEqual(default_ref('freebsd.yml'), ref)
+        for name in ('freebsd.yml', 'gate.yml'):
+            with self.subTest(workflow=name):
+                self.assertEqual(default_ref(name), ref)
 
     def test_release_builds_that_check_out_fonts_require_them(self):
         for job, data in workflow('release.yml')['jobs'].items():

@@ -35,6 +35,7 @@ runs:
         repository: storytold/craft-i18n
         ref: ${{ steps.pin.outputs.rev }}
         path: ${{ inputs.path }}
+        persist-credentials: false
     - name: Require craft-i18n in builds
       if: steps.pin.outputs.rev != ''
       shell: bash
