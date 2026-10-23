@@ -360,6 +360,13 @@ Individual actions are also available for composing custom pipelines:
 - `actions/install-wix`: Installs WiX toolset and UI/Util extensions.
 - `actions/install-nfpm`: Installs `nfpm` with strict SHA256 checksum verification.
 - `actions/install-linux-deps`: Installs Linux system build libraries and nfpm.
+- `actions/install-apt-packages`: Installs the given Ubuntu packages and keeps the downloaded `.deb` files in the Actions cache, so later runs install without the mirror download. By default only pushes to the default branch save the cache; PRs restore it. For an app's CI:
+
+  ```yaml
+  - uses: storytold/craft-common-actions/actions/install-apt-packages@main
+    with:
+      packages: pkg-config libxkbcommon-dev libwayland-dev mesa-vulkan-drivers
+  ```
 - `actions/install-riscv64-cross`: Installs Ubuntu ports RISC-V multiarch and cross-compilers.
 - `actions/install-trunk`: Installs Trunk for WebAssembly builds.
 - `actions/draft-release`: Collects artifacts, calculates SHA256 checksums, and publishes/updates draft GitHub release.
