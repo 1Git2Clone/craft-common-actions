@@ -103,9 +103,9 @@ embeds (craft-fonts `docs/integration.md`), so opt in once that list fits the ap
 An app pins its craft-i18n commit in `craft-i18n.rev` at its root, one SHA (keep it LF with
 `craft-i18n.rev text eol=lf` in `.gitattributes`). Its presence switches craft-i18n on: every
 build job, here and in `freebsd.yml` and `windows-arm64.yml`, checks out craft-i18n at that SHA
-and builds with `CRAFT_I18N_DIR` and `CRAFT_I18N_REQUIRED=1`. Packaging `needs:` the
-[i18n gate](#6-i18n-gateyml). A manual run can pass `skip-i18n-gate: true`; other events ignore it.
-An app without `craft-i18n.rev` builds as before.
+and builds with `CRAFT_I18N_DIR` and `CRAFT_I18N_REQUIRED=1`. That fails only on a missing or
+invalid craft-i18n checkout; a missing translation never blocks a build, pin bump or release
+(storytold/craft-i18n#20). An app without `craft-i18n.rev` builds as before.
 
 ### 2. `packaging-lint.yml`
 Lints all packaging configurations and metadata:
@@ -331,26 +331,7 @@ jobs:
     uses: storytold/craft-common-actions/.github/workflows/nix.yml@main
 ```
 
-### 6. `i18n-gate.yml`
-
-Runs the app's completeness tests, `cargo test --workspace i18n_gate` with `CRAFT_I18N_GATE=1`,
-against the craft-i18n commit in `craft-i18n.rev`. It fails if no test ran, since a filter that
-matches nothing passes: a pinned app needs at least one `i18n_gate_*` test. Without
-`craft-i18n.rev` it succeeds doing nothing, so jobs that `needs:` it still run.
-
-`release.yml` runs it before packaging. `freebsd.yml` runs it with `pin-changes-only: true`: only
-on a pull request whose diff touches `craft-i18n.rev`, whether or not `skip-tests` is set. An app
-with its own CI workflow calls it the same way:
-
-```yaml
-jobs:
-  i18n-gate:
-    uses: storytold/craft-common-actions/.github/workflows/i18n-gate.yml@main
-    with:
-      pin-changes-only: true
-```
-
-### 7. `gate.yml`
+### 6. `gate.yml`
 
 The quality gate for an app's pull requests and pushes to main. It runs `command` (by default
 `cargo xtask ci`) on each runner in `os`, after the suite's shared setup:

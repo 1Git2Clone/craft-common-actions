@@ -1,4 +1,4 @@
-"""The per-app craft-i18n pin (craft-i18n.rev) and the i18n gate that releases wait for."""
+"""The per-app craft-i18n pin (craft-i18n.rev) and its checkout."""
 from pathlib import Path
 import os
 import subprocess
@@ -35,7 +35,7 @@ def bash(script, cwd, env=None):
 
 class CraftI18nWorkflowTests(unittest.TestCase):
     def test_every_build_job_checks_out_craft_i18n(self):
-        for name in ('release.yml', 'freebsd.yml', 'windows-arm64.yml', 'i18n-gate.yml'):
+        for name in ('release.yml', 'freebsd.yml', 'windows-arm64.yml'):
             for job, data in workflow(name)['jobs'].items():
                 steps = data.get('steps', [])
                 if builds(steps):
@@ -52,19 +52,6 @@ class CraftI18nWorkflowTests(unittest.TestCase):
             for script in scripts:
                 with self.subTest(workflow=name):
                     self.assertIn('CRAFT_I18N_DIR="$PWD/craft-i18n" CRAFT_I18N_REQUIRED=1', script)
-
-    def test_release_packaging_waits_for_the_gate(self):
-        jobs = workflow('release.yml')['jobs']
-        for job, data in jobs.items():
-            if uses(data.get('steps', []), ACTION):
-                with self.subTest(job=job):
-                    self.assertIn('i18n-gate', data['needs'])
-        self.assertIn('i18n-gate', jobs['release']['needs'])
-        self.assertEqual(jobs['i18n-gate']['with']['skip'],
-                         "${{ inputs.skip-i18n-gate && github.event_name == 'workflow_dispatch' }}")
-
-    def test_ci_runs_the_gate_only_for_pin_changes(self):
-        self.assertEqual(workflow('freebsd.yml')['jobs']['i18n-gate']['with']['pin-changes-only'], 'true')
 
 
 class CheckoutActionTests(unittest.TestCase):
@@ -91,30 +78,6 @@ class CheckoutActionTests(unittest.TestCase):
 
     def test_a_pin_that_is_not_one_sha_fails(self):
         self.assertEqual(self.read_pin(b'main\n')[0], 1)
-
-
-class GateTests(unittest.TestCase):
-    STEPS = workflow('i18n-gate.yml')['jobs']['i18n-gate']['steps']
-    RUN = next(step['run'] for step in STEPS if step.get('name') == 'Run the i18n_gate tests')
-
-    def gate(self, cargo_output, status=0):
-        with tempfile.TemporaryDirectory() as directory:
-            tools = Path(directory, 'tools')
-            tools.mkdir()
-            cargo = tools / 'cargo'
-            cargo.write_text(f'#!/bin/sh\ncat <<"OUT"\n{cargo_output}\nOUT\nexit {status}\n')
-            cargo.chmod(0o755)
-            return bash(self.RUN, directory, {'PATH': f'{tools}:{os.environ["PATH"]}',
-                                              'RUNNER_TEMP': directory}).returncode
-
-    def test_a_filter_matching_no_test_fails(self):
-        self.assertEqual(self.gate('running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 12 filtered out'), 1)
-
-    def test_passing_gate_tests_pass(self):
-        self.assertEqual(self.gate('running 1 test\ntest audit::i18n_gate_all_strings ... ok\n\ntest result: ok. 1 passed'), 0)
-
-    def test_failing_gate_tests_fail(self):
-        self.assertNotEqual(self.gate('test i18n_gate_x ... FAILED', status=101), 0)
 
 
 if __name__ == '__main__':

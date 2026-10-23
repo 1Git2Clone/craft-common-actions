@@ -54,12 +54,6 @@ permissions:
   contents: read
 
 jobs:
-  # A pull request that moves craft-i18n.rev must keep the app's complete languages complete.
-  i18n-gate:
-    uses: storytold/craft-common-actions/.github/workflows/i18n-gate.yml@main
-    with:
-      pin-changes-only: true
-
   freebsd:
     name: FreeBSD 15 ${{ matrix.arch }} (build + test)
     runs-on: ubuntu-latest
