@@ -30,6 +30,11 @@ jobs:
         with:
           config: tests/ast-grep/sgconfig.yml
           paths: tests/ast-grep/clean
+      - name: A config without rule tests scans
+        uses: ./actions/ast-grep
+        with:
+          config: tests/ast-grep/no-tests.yml
+          paths: tests/ast-grep/clean
       - name: A finding fails
         id: finding
         continue-on-error: true

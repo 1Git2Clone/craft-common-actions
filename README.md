@@ -408,7 +408,7 @@ jobs:
 
 Structural lint with [ast-grep](https://ast-grep.github.io/), driven by the app's own
 [`sgconfig.yml`](https://ast-grep.github.io/reference/sgconfig.html): CI and a local
-`ast-grep scan` read the same rules. When the config has `testConfigs`, the rule tests run first
+`ast-grep scan` read the same rules. The rule tests in its `testConfigs` run first
 (`ast-grep test --skip-snapshot-tests`), so a rule that stopped matching what it should fails
 before it judges the code. The scan parses without building, so it takes seconds and can run on
 every pull request next to the gate.

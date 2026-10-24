@@ -39,7 +39,9 @@ jobs:
         with:
           persist-credentials: false
       - name: ast-grep
-        uses: storytold/craft-common-actions/actions/ast-grep@main
+        # The action from this workflow's own repository and commit, so a caller that pins the
+        # workflow (or calls a fork's) runs the action that goes with it.
+        uses: $/actions/ast-grep
         with:
           config: ${{ inputs.config }}
           paths: ${{ inputs.paths }}

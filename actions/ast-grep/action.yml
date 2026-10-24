@@ -77,10 +77,9 @@ runs:
             exit 1
           fi
         done
-        # Rules that come with tests are checked against them before they judge the code.
-        if grep -q '^testConfigs:' "$CONFIG"; then
-          ast-grep test --config "$CONFIG" --skip-snapshot-tests
-        fi
+        # Rules are checked against their tests before they judge the code (with no testConfigs
+        # there are none to run).
+        ast-grep test --config "$CONFIG" --skip-snapshot-tests
         # GitHub shows only the first few annotations of a step, so a failing scan also prints
         # every finding as file:line in the log.
         if ! ast-grep scan --config "$CONFIG" --format github "${paths[@]}"; then
